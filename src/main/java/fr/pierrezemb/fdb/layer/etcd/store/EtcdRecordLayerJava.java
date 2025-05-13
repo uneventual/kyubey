@@ -48,7 +48,7 @@ import java.util.function.Function;
 
 import static com.apple.foundationdb.record.TupleRange.ALL;
 
-public class EtcdRecordLayer {
+public class EtcdRecordLayerJava {
 
   // Keep a global track of the number of records stored
   protected static final Index COUNT_INDEX = new Index(
@@ -61,7 +61,7 @@ public class EtcdRecordLayer {
 
   protected static final Index VERSIONSTAMP_INDEX = new Index("kv-globalVersion", VersionKeyExpression.VERSION, IndexTypes.VERSION);
 
-  private static final Logger LOGGER = LoggerFactory.getLogger(EtcdRecordLayer.class);
+  private static final Logger LOGGER = LoggerFactory.getLogger(EtcdRecordLayerJava.class);
   private final FDBDatabase db;
   private final KeySpace keySpace = new KeySpace(
     new DirectoryLayerDirectory("application")
@@ -69,7 +69,7 @@ public class EtcdRecordLayer {
   );
 
 
-  public EtcdRecordLayer(String clusterFilePath) throws InterruptedException, ExecutionException, TimeoutException {
+  public EtcdRecordLayerJava(String clusterFilePath) throws InterruptedException, ExecutionException, TimeoutException {
     db = FDBDatabaseFactory.instance().getDatabase(clusterFilePath);
     db.performNoOpAsync().get(2, TimeUnit.SECONDS);
   }

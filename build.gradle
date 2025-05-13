@@ -11,8 +11,9 @@ plugins {
   id 'java'
   id 'application'
   id 'idea'
-  id 'com.github.johnrengelman.shadow' version '5.0.0'
+  id 'com.github.johnrengelman.shadow' version '7.0.0'
   id "com.google.protobuf" version "0.8.12"
+  id 'org.jetbrains.kotlin.jvm'
 }
 
 group = 'fr.pierrezemb'
@@ -56,6 +57,7 @@ dependencies {
   testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine:$junitJupiterEngineVersion"
   testImplementation "org.junit.jupiter:junit-jupiter-api:$junitJupiterEngineVersion"
   testImplementation("org.junit.jupiter:junit-jupiter-params:$junitJupiterEngineVersion")
+  implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
 }
 
 
@@ -107,4 +109,6 @@ protobuf {
 
 tasks.withType(JavaCompile) {
   options.compilerArgs << '-Xlint:unchecked'
+}
+compileKotlin {
 }

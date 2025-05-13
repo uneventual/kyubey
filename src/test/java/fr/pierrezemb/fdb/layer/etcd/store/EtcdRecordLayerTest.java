@@ -20,11 +20,11 @@ import static org.junit.Assert.assertNotNull;
 class EtcdRecordLayerTest extends AbstractFDBContainer {
 
   private static final String TENANT = "my-tenant";
-  private EtcdRecordLayer recordLayer;
+  private EtcdRecordLayerJava recordLayer;
 
   @BeforeAll
   void setUp() throws IOException, InterruptedException, ExecutionException, TimeoutException {
-    this.recordLayer = new EtcdRecordLayer(container.clearAndGetClusterFile().getAbsolutePath());
+    this.recordLayer = new EtcdRecordLayerJava(container.clearAndGetClusterFile().getAbsolutePath());
   }
 
   @Test
