@@ -44,6 +44,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 
 import static com.apple.foundationdb.record.TupleRange.ALL;
@@ -101,7 +102,7 @@ public class EtcdRecordLayerJava {
     return records.stream().max(Comparator.comparing(EtcdRecord.KeyValue::getVersion)).get();
   }
 
-  private RecordQuery createGetQuery(byte[] key, long revision) {
+  RecordQuery createGetQuery(byte[] key, long revision) {
     // creating the query
     return RecordQuery.newBuilder()
       .setRecordType("KeyValue")
@@ -148,9 +149,9 @@ public class EtcdRecordLayerJava {
     });
   }
 
+  public Function<FDBRecordContext, EtcdRecord.KeyValue> put_with_context(String tenantID, EtcdRecord.KeyValue record) {
 
-  public EtcdRecord.KeyValue put(String tenantID, EtcdRecord.KeyValue record) {
-    return db.run(context -> {
+    return (FDBRecordContext context) -> {
       FDBRecordStore fdbRecordStore = createFDBRecordStore(context, tenantID);
 
       // checking if we have a previous version of the key
@@ -176,7 +177,11 @@ public class EtcdRecordLayerJava {
       LOGGER.trace("successfully put record {}", fixedRecord);
 
       return fixedRecord;
-    });
+    };
+  };
+
+  public EtcdRecord.KeyValue put(String tenantID, EtcdRecord.KeyValue record) {
+    return db.run(put_with_context(tenantID, record));
   }
 
   private RecordQuery createWatchQuery(long revision, QueryComponent keyQueryFilter) {
@@ -199,8 +204,8 @@ public class EtcdRecordLayerJava {
       ).build();
   }
 
-  public Integer delete(String tenantID, byte[] start, byte[] end) {
-    Integer count = this.db.run(context -> {
+  public Function<FDBRecordContext, Integer> delete_with_context(String tenantID, byte[] start, byte[] end) {
+    return context -> {
       LOGGER.trace("deleting between {} and {}", start, end);
       FDBRecordStore fdbRecordStore = createFDBRecordStore(context, tenantID);
 
@@ -227,7 +232,11 @@ public class EtcdRecordLayerJava {
           })
           .getCount()
           .join();
-    });
+    };
+  }
+
+  public Integer delete(String tenantID, byte[] start, byte[] end) {
+    Integer count = this.db.run(delete_with_context(tenantID, start, end));
     LOGGER.trace("deleted {} records", count);
     return count;
   }

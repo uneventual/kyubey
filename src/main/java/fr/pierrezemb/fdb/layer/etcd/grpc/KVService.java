@@ -1,5 +1,6 @@
 package fr.pierrezemb.fdb.layer.etcd.grpc;
 
+import com.apple.foundationdb.record.provider.foundationdb.FDBRecordContext;
 import com.google.protobuf.InvalidProtocolBufferException;
 import etcdserverpb.EtcdIoRpcProto;
 import etcdserverpb.VertxKVGrpc;

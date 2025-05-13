@@ -4,6 +4,8 @@ import com.google.protobuf.InvalidProtocolBufferException;
 import etcdserverpb.EtcdIoRpcProto;
 import fr.pierrezemb.etcd.record.pb.EtcdRecord;
 
+import java.util.function.BiFunction;
+
 public class ProtoUtils {
   public static EtcdRecord.KeyValue from(EtcdIoRpcProto.PutRequest request) throws InvalidProtocolBufferException {
     return EtcdRecord.KeyValue.newBuilder()
@@ -12,4 +14,9 @@ public class ProtoUtils {
       .setLease(request.getLease())
       .build();
   }
+}
+
+public class Blah {
+
+
 }
