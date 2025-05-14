@@ -92,6 +92,7 @@ public class FoundationDBContainer extends GenericContainer<FoundationDBContaine
 
     log.debug("clearing FDB...");
     db.run(transaction -> {
+      log.debug("tried to clear");
       transaction.clear(new Range(Tuple.from("").pack(), Tuple.from("xFF").pack()));
       return null;
     });
