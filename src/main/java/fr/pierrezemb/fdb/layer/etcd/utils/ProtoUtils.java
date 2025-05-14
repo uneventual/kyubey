@@ -16,7 +16,3 @@ public class ProtoUtils {
   }
 }
 
-public class Blah {
-
-
-}

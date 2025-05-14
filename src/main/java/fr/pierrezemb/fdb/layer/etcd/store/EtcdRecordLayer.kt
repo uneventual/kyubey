@@ -6,33 +6,47 @@ import com.apple.foundationdb.record.provider.foundationdb.FDBRecordContext
 import com.google.protobuf.ByteString
 import etcdserverpb.EtcdIoRpcProto
 import fr.pierrezemb.etcd.record.pb.EtcdRecord
-import fr.pierrezemb.fdb.layer.etcd.grpc.GrpcContextKeys
+import fr.pierrezemb.fdb.layer.etcd.utils.Misc.createComparatorFromRequest
 import fr.pierrezemb.fdb.layer.etcd.utils.ProtoUtils
-import io.vertx.core.Future
 import mvccpb.EtcdIoKvProto
 import java.util.*
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeoutException
 import java.util.stream.Collectors
 import java.util.stream.Stream
+import etcdserverpb.EtcdIoRpcProto.*;
 
 
-/**
- * Drop‑in Kotlin wrapper for [EtcdRecordLayerJava].
- *
- * Behaviour is 100 % inherited from the Java implementation; we just expose it
- * as an `open` Kotlin class so you can extend / override in Kotlin land.
- *
- * Example:
- * ```
- * class AuditingEtcdLayer(path: String) : KotlinEtcdRecordLayer(path) {
- *     override fun put(tenantID: String, record: EtcdRecord.KeyValue): EtcdRecord.KeyValue {
- *         println("AUDIT → putting ${record.key}")
- *         return super.put(tenantID, record)
- *     }
- * }
- * ```
- */
+fun RangeResponse.toResponseOp(): ResponseOp =
+  ResponseOp.newBuilder()
+    .setResponseRange(this)
+    .build()
+
+fun PutResponse.toResponseOp(): ResponseOp =
+  ResponseOp.newBuilder()
+    .setResponsePut(this)
+    .build()
+
+fun DeleteRangeResponse.toResponseOp(): ResponseOp =
+  ResponseOp.newBuilder()
+    .setResponseDeleteRange(this)
+    .build()
+
+fun TxnResponse.toResponseOp(): ResponseOp =
+  ResponseOp.newBuilder()
+    .setResponseTxn(this)
+    .build()
+
+fun Long.toDeleteRangeResponse(): DeleteRangeResponse =
+  DeleteRangeResponse.newBuilder().setDeleted(this).build()
+
+fun EtcdRecord.KeyValue.toPutResponse(): PutResponse =
+  EtcdIoRpcProto
+  .PutResponse.newBuilder()
+  .setHeader(
+  EtcdIoRpcProto.ResponseHeader.newBuilder().setRevision(this.modRevision).build()
+  ).build()
+
 open class KotlinEtcdRecordLayer
 @Throws(                         // ← annotation belongs on the constructor
   InterruptedException::class,
@@ -88,58 +102,62 @@ constructor(clusterFilePath: String)     // delegates to super‑ctor
     }
   }
 
-  fun range(request: EtcdIoRpcProto.RangeRequest): Future<EtcdIoRpcProto.RangeResponse?> {
-    val tenantId = GrpcContextKeys.TENANT_ID_KEY.get()
-    if (tenantId == null) {
-      return Future.failedFuture<EtcdIoRpcProto.RangeResponse?>("Auth enabled and tenant not found.")
-    }
+   fun range_with_context(tenantID: String, request: EtcdIoRpcProto.RangeRequest): (FDBRecordContext) -> EtcdIoRpcProto.RangeResponse {
+     return { context ->
 
-    var results: MutableList<EtcdRecord.KeyValue?> = ArrayList<EtcdRecord.KeyValue?>()
-    val version = Math.toIntExact(request.getRevision())
+       var results: MutableList<EtcdRecord.KeyValue?> = ArrayList<EtcdRecord.KeyValue?>()
+       val version = Math.toIntExact(request.revision)
 
-    if (request.getRangeEnd().isEmpty()) {
-      // get
-      results.add(get(tenantId, request.getKey().toByteArray(), version.toLong()))
-    } else {
-      // scan
-      results = scan(
-        tenantId,
-        request.getKey().toByteArray(),
-        request.getRangeEnd().toByteArray(),
-        version.toLong()
-      )
-    }
+       if (request.rangeEnd.isEmpty) {
+         // get
+         results.add(get_with_context(tenantID, request.key.toByteArray(), version.toLong()).apply(context))
+       } else {
+         // scan
+         results = scan_with_context(
+           tenantID,
+           request.key.toByteArray(),
+           request.rangeEnd.toByteArray(),
+           version.toLong()
+         ).apply(context)
+       }
 
-    val kvs = results.stream()
-      .flatMap<EtcdRecord.KeyValue?> { t: EtcdRecord.KeyValue? -> Stream.ofNullable(t) }
-      .map<EtcdIoKvProto.KeyValue?> { e: EtcdRecord.KeyValue? ->
-        EtcdIoKvProto.KeyValue.newBuilder()
-          .setKey(e!!.getKey()).setValue(e.getValue()).build()
-      }.collect(Collectors.toList())
+       val kvs = results.stream()
+         .flatMap<EtcdRecord.KeyValue?> { t: EtcdRecord.KeyValue? -> Stream.ofNullable(t) }
+         .map<EtcdIoKvProto.KeyValue?> { e: EtcdRecord.KeyValue? ->
+           EtcdIoKvProto.KeyValue.newBuilder()
+             .setKey(e!!.key).setValue(e.value).build()
+         }.collect(Collectors.toList())
 
-    if (request.getSortOrder().getNumber() > 0) {
-      kvs.sort(createComparatorFromRequest(request))
-    }
+       if (request.getSortOrder().getNumber() > 0) {
+         kvs.sortWith(createComparatorFromRequest(request))
+       }
 
+
+       EtcdIoRpcProto.RangeResponse.newBuilder().addAllKvs(kvs).setCount(kvs.size.toLong()).build()
+     }
   }
 
-  private fun recursive_txn_op(request: List<EtcdIoRpcProto.RequestOp>, context: FDBRecordContext, tenantID: String): EtcdIoRpcProto.ResponseOp {
-    request.map { r ->
-
+  private fun recursiveTxnOp(request: List<EtcdIoRpcProto.RequestOp>, context: FDBRecordContext, tenantID: String): List<EtcdIoRpcProto.ResponseOp> {
+    return request.map { r ->
       when(r.requestCase) {
-        EtcdIoRpcProto.RequestOp.RequestCase.REQUEST_RANGE -> r.requestRange
-        EtcdIoRpcProto.RequestOp.RequestCase.REQUEST_PUT -> put_with_context(tenantID, ProtoUtils.from(r.requestPut))
-        EtcdIoRpcProto.RequestOp.RequestCase.REQUEST_DELETE_RANGE -> delete_with_context(tenantID, r.requestDeleteRange.key.toByteArray(), r.requestDeleteRange.rangeEnd.toByteArray())
-        EtcdIoRpcProto.RequestOp.RequestCase.REQUEST_TXN -> recursive_txn(r.requestTxn, context, tenantID)
+        EtcdIoRpcProto.RequestOp.RequestCase.REQUEST_RANGE -> range_with_context(tenantID, r.requestRange).invoke(context).toResponseOp()
+        EtcdIoRpcProto.RequestOp.RequestCase.REQUEST_PUT ->
+        put_with_context(tenantID,
+          ProtoUtils.from(r.requestPut)).apply(context).toPutResponse().toResponseOp()
+        EtcdIoRpcProto.RequestOp.RequestCase.REQUEST_DELETE_RANGE ->
+          delete_with_context(tenantID,
+          r.requestDeleteRange.key.toByteArray(),
+          r.requestDeleteRange.rangeEnd.toByteArray()).apply(context).toLong().toDeleteRangeResponse().toResponseOp()
+        EtcdIoRpcProto.RequestOp.RequestCase.REQUEST_TXN ->
+          recursiveTxn(r.requestTxn, context, tenantID).toResponseOp()
         EtcdIoRpcProto.RequestOp.RequestCase.REQUEST_NOT_SET ->
           throw RuntimeException("Failed Deserializing Comparison")
       }
-
-  }
     }
+  }
 
 
-  private fun recursive_txn(request: EtcdIoRpcProto.TxnRequest , context: FDBRecordContext, tenantID: String): EtcdIoRpcProto.TxnResponse {
+  private fun recursiveTxn(request: EtcdIoRpcProto.TxnRequest, context: FDBRecordContext, tenantID: String): EtcdIoRpcProto.TxnResponse {
 
     val fdbRecordStore = createFDBRecordStore(context, tenantID);
 
@@ -154,18 +172,26 @@ constructor(clusterFilePath: String)     // delegates to super‑ctor
       .map({v -> predicate(comp)(v) }).asList()
     }.map { v -> v.join() }.flatten().all { v -> v }
 
-    if (should) {
-      recursive_txn_op(request.successList, context, tenantID)
+    val result = if (should) {
+      recursiveTxnOp(request.successList, context, tenantID)
     } else {
-      recursive_txn_op(request.failureList, context, tenantID)
+      recursiveTxnOp(request.failureList, context, tenantID)
     }
 
+    val build = EtcdIoRpcProto.TxnResponse.newBuilder()
+      .setSucceeded(should)
 
-    return EtcdIoRpcProto.TxnResponse.newBuilder().build();
+    result.forEachIndexed {
+      i, r -> build.setResponses(i, r)
+    }
+
+    return build.build()
+
 
   }
 
-  fun txn() {
-
+  fun txn(tenantID: String, request: EtcdIoRpcProto.TxnRequest): TxnResponse {
+    return db.run { context ->  recursiveTxn(request, context, tenantID) };
   }
+
 }

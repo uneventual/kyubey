@@ -63,7 +63,7 @@ public class EtcdRecordLayerJava {
   protected static final Index VERSIONSTAMP_INDEX = new Index("kv-globalVersion", VersionKeyExpression.VERSION, IndexTypes.VERSION);
 
   private static final Logger LOGGER = LoggerFactory.getLogger(EtcdRecordLayerJava.class);
-  private final FDBDatabase db;
+  final FDBDatabase db;
   private final KeySpace keySpace = new KeySpace(
     new DirectoryLayerDirectory("application")
       .addSubdirectory(new KeySpaceDirectory("tenant", KeySpaceDirectory.KeyType.STRING))
@@ -79,6 +79,21 @@ public class EtcdRecordLayerJava {
     return get(tenant, key, 0);
   }
 
+  public Function<FDBRecordContext, EtcdRecord.KeyValue> get_with_context(String tenantID, byte[] key, long revision) {
+    return context -> {
+      FDBRecordStore fdbRecordStore = createFDBRecordStore(context, tenantID);
+      var records = runQuery(fdbRecordStore, context, createGetQuery(key, revision));
+
+      if (records.isEmpty()) {
+        LOGGER.warn("cannot find any record for key {}", key);
+        return null;
+      }
+      LOGGER.trace("found {} records for key {}", records.size(), key);
+
+      // return the highest version for a given key
+      return records.stream().max(Comparator.comparing(EtcdRecord.KeyValue::getVersion)).get();
+    };
+  }
   /**
    * get an Etcd record.
    *
@@ -87,19 +102,7 @@ public class EtcdRecordLayerJava {
    */
   public EtcdRecord.KeyValue get(String tenantID, byte[] key, long revision) {
     LOGGER.trace("retrieving record {} for revision {}", Arrays.toString(key), revision);
-    List<EtcdRecord.KeyValue> records = db.run(context -> {
-      FDBRecordStore fdbRecordStore = createFDBRecordStore(context, tenantID);
-      return runQuery(fdbRecordStore, context, createGetQuery(key, revision));
-    });
-
-    if (records.size() == 0) {
-      LOGGER.warn("cannot find any record for key {}", key);
-      return null;
-    }
-    LOGGER.trace("found {} records for key {}", records.size(), key);
-
-    // return the highest version for a given key
-    return records.stream().max(Comparator.comparing(EtcdRecord.KeyValue::getVersion)).get();
+    return db.run(get_with_context(tenantID, key, revision));
   }
 
   RecordQuery createGetQuery(byte[] key, long revision) {
@@ -125,9 +128,8 @@ public class EtcdRecordLayerJava {
     return scan(tenant, start, end, 0);
   }
 
-  public List<EtcdRecord.KeyValue> scan(String tenantID, byte[] start, byte[] end, long revision) {
-    LOGGER.trace("scanning between {} and {} with revision {}", start, end, revision);
-    return db.run(context -> {
+  public Function<FDBRecordContext, List<EtcdRecord.KeyValue>> scan_with_context(String tenantID, byte[] start, byte[] end, long revision) {
+    return context -> {
       FDBRecordStore fdbRecordStore = createFDBRecordStore(context, tenantID);
       RecordQuery query = RecordQuery.newBuilder()
         .setRecordType("KeyValue")
@@ -146,7 +148,12 @@ public class EtcdRecordLayerJava {
         ).build();
 
       return runQuery(fdbRecordStore, context, query);
-    });
+    };
+  }
+
+  public List<EtcdRecord.KeyValue> scan(String tenantID, byte[] start, byte[] end, long revision) {
+    LOGGER.trace("scanning between {} and {} with revision {}", start, end, revision);
+    return db.run(scan_with_context(tenantID, start, end, revision));
   }
 
   public Function<FDBRecordContext, EtcdRecord.KeyValue> put_with_context(String tenantID, EtcdRecord.KeyValue record) {

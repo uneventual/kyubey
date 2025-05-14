@@ -16,6 +16,8 @@ import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static fr.pierrezemb.fdb.layer.etcd.utils.Misc.createComparatorFromRequest;
+
 /**
  * KVService corresponds to the KV GRPC service
  */
@@ -57,34 +59,6 @@ public class KVService extends VertxKVGrpc.KVVertxImplBase {
     return Future.succeededFuture(EtcdIoRpcProto.RangeResponse.newBuilder().addAllKvs(kvs).setCount(kvs.size()).build());
   }
 
-  private Comparator<? super EtcdIoKvProto.KeyValue> createComparatorFromRequest(EtcdIoRpcProto.RangeRequest request) {
-    Comparator<EtcdIoKvProto.KeyValue> comparator;
-    switch (request.getSortTarget()) {
-      case KEY:
-        comparator = Comparator.comparing(e -> e.getKey().toStringUtf8());
-        break;
-      case VERSION:
-        comparator = Comparator.comparing(EtcdIoKvProto.KeyValue::getVersion);
-        break;
-      case CREATE:
-        comparator = Comparator.comparing(EtcdIoKvProto.KeyValue::getCreateRevision);
-        break;
-      case MOD:
-        comparator = Comparator.comparing(EtcdIoKvProto.KeyValue::getModRevision);
-        break;
-      case VALUE:
-        comparator = Comparator.comparing(e -> e.getValue().toStringUtf8());
-        break;
-      default:
-        throw new IllegalStateException("Unexpected value: " + request.getSortTarget());
-    }
-
-    if (request.getSortOrder().equals(EtcdIoRpcProto.RangeRequest.SortOrder.DESCEND)) {
-      comparator = comparator.reversed();
-    }
-
-    return comparator;
-  }
 
   @Override
   public Future<EtcdIoRpcProto.PutResponse> put(EtcdIoRpcProto.PutRequest request) {
@@ -130,7 +104,8 @@ public class KVService extends VertxKVGrpc.KVVertxImplBase {
 
   @Override
   public Future<EtcdIoRpcProto.TxnResponse> txn(EtcdIoRpcProto.TxnRequest request) {
-    return super.txn(request);
+    String tenantId = GrpcContextKeys.TENANT_ID_KEY.get();
+    return Future.succeededFuture(this.recordLayer.txn(tenantId, request));
   }
 
   @Override
