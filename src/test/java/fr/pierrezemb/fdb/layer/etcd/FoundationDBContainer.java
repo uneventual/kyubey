@@ -87,15 +87,19 @@ public class FoundationDBContainer extends GenericContainer<FoundationDBContaine
 
   public void clearFDB() throws FDBException {
     FDB fdb = FDB.selectAPIVersion(FDB_API_VERSION);
+    try {
+      Database db = fdb.open(clusterFile.getAbsolutePath());
 
-    Database db = fdb.open(clusterFile.getAbsolutePath());
+      log.debug("clearing FDB...");
+      db.run(transaction -> {
+        log.debug("tried to clear");
+        transaction.clear(new Range(Tuple.from("").pack(), Tuple.from("xFF").pack()));
+        return null;
+      });
+    } catch (Exception e) {
+      e.printStackTrace();
+    }
 
-    log.debug("clearing FDB...");
-    db.run(transaction -> {
-      log.debug("tried to clear");
-      transaction.clear(new Range(Tuple.from("").pack(), Tuple.from("xFF").pack()));
-      return null;
-    });
     log.debug("clearing FDB done");
 
   }
