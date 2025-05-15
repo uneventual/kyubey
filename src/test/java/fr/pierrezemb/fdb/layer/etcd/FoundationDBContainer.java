@@ -1,17 +1,12 @@
 package fr.pierrezemb.fdb.layer.etcd;
 
-import com.apple.foundationdb.Database;
-import com.apple.foundationdb.FDB;
 import com.apple.foundationdb.FDBException;
-import com.apple.foundationdb.Range;
-import com.apple.foundationdb.tuple.Tuple;
 import com.github.dockerjava.api.command.InspectContainerResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testcontainers.containers.Container;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
-import fr.pierrezemb.fdb.layer.etcd.store.EtcdRecordLayerJava;
 
 import java.io.File;
 import java.io.IOException;

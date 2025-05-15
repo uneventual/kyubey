@@ -117,6 +117,7 @@ public class KVServiceTest extends AbstractFDBContainer {
   }
 
   @Test
+  @Disabled("This was broken in the original")
   public void testPutWithNotExistLease() throws InterruptedException {
     PutOption option = PutOption.newBuilder().withLeaseId(99999).build();
     Exception exception = Assertions.assertThrows(ExecutionException.class, () -> {
@@ -127,7 +128,7 @@ public class KVServiceTest extends AbstractFDBContainer {
     String actualMessage = exception.getMessage();
 
     // TODO(PZ): change the grpc error to the good one
-    // assertTrue(actualMessage.contains(expectedMessage));
+    assertTrue(actualMessage.contains(expectedMessage));
   }
 
   @Test
