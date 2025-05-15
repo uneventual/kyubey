@@ -182,7 +182,7 @@ constructor(clusterFilePath: String)     // delegates to super‑ctor
       .setSucceeded(should)
 
     result.forEachIndexed {
-      i, r -> build.setResponses(i, r)
+      i, r -> build.addResponses(r)
     }
 
     return build.build()

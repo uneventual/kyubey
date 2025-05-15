@@ -25,6 +25,7 @@ repositories {
 
 ext {
   vertxVersion = '4.0.3'
+  // junitJupiterEngineVersion = '5.13.0-M3'
   junitJupiterEngineVersion = '5.4.0'
 }
 
