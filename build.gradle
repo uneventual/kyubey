@@ -3,7 +3,7 @@ buildscript {
     mavenCentral()
   }
   dependencies {
-    classpath 'com.google.protobuf:protobuf-gradle-plugin:0.8.12'
+    classpath 'com.google.protobuf:protobuf-gradle-plugin:0.9.4'
   }
 }
 
@@ -12,7 +12,7 @@ plugins {
   id 'application'
   id 'idea'
   id 'com.github.johnrengelman.shadow' version '7.0.0'
-  id "com.google.protobuf" version "0.8.12"
+  id "com.google.protobuf" version "0.9.4"
   id 'org.jetbrains.kotlin.jvm'
 }
 
@@ -110,6 +110,10 @@ protobuf {
       vertx
     }
   }
+}
+
+processResources {
+    dependsOn generateProto
 }
 
 tasks.withType(JavaCompile) {
