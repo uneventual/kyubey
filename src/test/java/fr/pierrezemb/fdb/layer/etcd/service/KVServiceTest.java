@@ -202,7 +202,6 @@ public class KVServiceTest extends AbstractFDBContainer {
   }
 
   @Test
-  @Disabled("No TXN for now")
   public void testTxn() throws Exception {
     ByteSequence sampleKey = bytesOf("txn_key");
     ByteSequence sampleValue = bytesOf("xyz");
@@ -225,7 +224,6 @@ public class KVServiceTest extends AbstractFDBContainer {
     assertEquals(putValue.toString(UTF_8), getResp.getKvs().get(0).getValue().toString(UTF_8));
   }
 
-  @Disabled("No TXN for now")
   @Test
   public void testNestedTxn() throws Exception {
     ByteSequence foo = bytesOf("txn_foo");

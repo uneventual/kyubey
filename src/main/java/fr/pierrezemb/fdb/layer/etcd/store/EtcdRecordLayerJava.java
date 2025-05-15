@@ -13,6 +13,7 @@ import com.apple.foundationdb.record.metadata.Key;
 import com.apple.foundationdb.record.metadata.expressions.EmptyKeyExpression;
 import com.apple.foundationdb.record.metadata.expressions.GroupingKeyExpression;
 import com.apple.foundationdb.record.metadata.expressions.VersionKeyExpression;
+import com.apple.foundationdb.record.provider.foundationdb.APIVersion;
 import com.apple.foundationdb.record.provider.foundationdb.FDBDatabase;
 import com.apple.foundationdb.record.provider.foundationdb.FDBDatabaseFactory;
 import com.apple.foundationdb.record.provider.foundationdb.FDBRecordContext;
@@ -50,6 +51,7 @@ import java.util.function.Function;
 import static com.apple.foundationdb.record.TupleRange.ALL;
 
 public class EtcdRecordLayerJava {
+  public static APIVersion FDB_API_VERSION = APIVersion.API_VERSION_7_1;
 
   // Keep a global track of the number of records stored
   protected static final Index COUNT_INDEX = new Index(
@@ -72,6 +74,11 @@ public class EtcdRecordLayerJava {
 
   public EtcdRecordLayerJava(String clusterFilePath) throws InterruptedException, ExecutionException, TimeoutException {
     db = FDBDatabaseFactory.instance().getDatabase(clusterFilePath);
+
+    // var dbf = FDBDatabaseFactory.instance();
+
+    // dbf.setAPIVersion(FDB_API_VERSION);
+    // db = dbf.getDatabase(clusterFilePath);
     db.performNoOpAsync().get(2, TimeUnit.SECONDS);
   }
 

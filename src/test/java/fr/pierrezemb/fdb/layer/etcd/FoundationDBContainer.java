@@ -11,16 +11,19 @@ import org.slf4j.LoggerFactory;
 import org.testcontainers.containers.Container;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
+import fr.pierrezemb.fdb.layer.etcd.store.EtcdRecordLayerJava;
 
 import java.io.File;
 import java.io.IOException;
 
 public class FoundationDBContainer extends GenericContainer<FoundationDBContainer> {
   public static final int FDB_PORT = 4500;
-  private static final String FDB_VERSION = "6.2.19";
+  private static final String FDB_VERSION = "7.3.67";
   private static final String FDB_IMAGE = "foundationdb/foundationdb";
   private static final Logger log = LoggerFactory.getLogger(FoundationDBContainer.class);
-  private static int FDB_API_VERSION = 610;
+
+  private static int FDB_API_VERSION = 630;
+  // private static int FDB_API_VERSION = EtcdRecordLayerJava.FDB_API_VERSION.getVersionNumber();
   private File clusterFile;
 
   public FoundationDBContainer() {
@@ -86,21 +89,21 @@ public class FoundationDBContainer extends GenericContainer<FoundationDBContaine
   }
 
   public void clearFDB() throws FDBException {
-    FDB fdb = FDB.selectAPIVersion(FDB_API_VERSION);
-    try {
-      Database db = fdb.open(clusterFile.getAbsolutePath());
+    // FDB fdb = FDB.selectAPIVersion(FDB_API_VERSION);
+    // try {
+    //   Database db = fdb.open(clusterFile.getAbsolutePath());
 
-      log.debug("clearing FDB...");
-      db.run(transaction -> {
-        log.debug("tried to clear");
-        transaction.clear(new Range(Tuple.from("").pack(), Tuple.from("xFF").pack()));
-        return null;
-      });
-    } catch (Exception e) {
-      e.printStackTrace();
-    }
+    //   log.debug("clearing FDB...");
+    //   db.run(transaction -> {
+    //     log.debug("tried to clear");
+    //     transaction.clear(new Range(Tuple.from("").pack(), Tuple.from("xFF").pack()));
+    //     return null;
+    //   });
+    // } catch (Exception e) {
+    //   e.printStackTrace();
+    // }
 
-    log.debug("clearing FDB done");
+    // log.debug("clearing FDB done");
 
   }
 

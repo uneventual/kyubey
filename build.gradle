@@ -42,7 +42,11 @@ dependencies {
   implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
   implementation "io.vertx:vertx-junit5:$vertxVersion"
   implementation "io.vertx:vertx-grpc:$vertxVersion"
-  implementation 'org.foundationdb:fdb-record-layer-core-pb3:2.8.91.0'
+  // https://mvnrepository.com/artifact/org.foundationdb/fdb-record-layer-core
+  implementation("org.foundationdb:fdb-record-layer-core:4.2.8.0")
+  implementation 'org.slf4j:slf4j-api:1.7.36'
+
+  // implementation 'org.foundationdb:fdb-record-layer-core-pb3:2.8.91.0'
 
   implementation group: 'io.grpc', name: 'grpc-alts', version: "1.35.0"
 
@@ -63,7 +67,7 @@ dependencies {
 
 
 shadowJar {
-  classifier = 'fat'
+  archiveClassifier = 'fat'
   manifest {
     attributes 'Main-Verticle': mainVerticleName
   }
