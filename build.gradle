@@ -31,8 +31,18 @@ ext {
 application {
   mainClassName = 'io.vertx.core.Launcher'
 }
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
 
-sourceCompatibility = '11'
+compileKotlin {
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+}
+
 
 def mainVerticleName = 'fr.pierrezemb.fdb.layer.etcd.MainVerticle'
 def watchForChange = 'src/**/*'
@@ -118,6 +128,4 @@ processResources {
 
 tasks.withType(JavaCompile) {
   options.compilerArgs << '-Xlint:unchecked'
-}
-compileKotlin {
 }
