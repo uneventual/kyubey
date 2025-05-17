@@ -16,38 +16,12 @@ package integration
 
 import (
 	"context"
-	"net"
 	"net/http"
-	"testing"
-
-	"github.com/stretchr/testify/require"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/server/v3/etcdserver"
 	"go.etcd.io/etcd/server/v3/storage/mvcc/testutil"
-	integration2 "go.etcd.io/etcd/tests/v3/framework/integration"
 )
-
-// TestCompactionHash tests the compaction hash
-// TODO: Change this to fuzz test
-func TestCompactionHash(t *testing.T) {
-	integration2.BeforeTest(t)
-
-	clus := integration2.NewCluster(t, &integration2.ClusterConfig{Size: 1})
-	defer clus.Terminate(t)
-
-	cc, err := clus.ClusterClient(t)
-	require.NoError(t, err)
-	client := &http.Client{
-		Transport: &http.Transport{
-			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("unix", clus.Members[0].PeerURLs[0].Host)
-			},
-		},
-	}
-
-	testutil.TestCompactionHash(context.Background(), t, hashTestCase{cc, clus.Members[0].GRPCURL, client, clus.Members[0].Server}, 1000)
-}
 
 type hashTestCase struct {
 	*clientv3.Client

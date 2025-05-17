@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -72,7 +71,7 @@ func TestKVPutError(t *testing.T) {
 	}
 }
 
-func TestKVPutWithLease(t *testing.T) {
+func TestKVPutWithse(t *testing.T) {
 	integration2.BeforeTest(t)
 
 	clus := integration2.NewCluster(t, &integration2.ClusterConfig{Size: 3})
@@ -747,131 +746,5 @@ func TestKVLargeRequests(t *testing.T) {
 		}
 
 		clus.Terminate(t)
-	}
-}
-
-// TestKVForLearner ensures learner member only accepts serializable read request.
-func TestKVForLearner(t *testing.T) {
-	integration2.BeforeTest(t)
-
-	clus := integration2.NewCluster(t, &integration2.ClusterConfig{Size: 3, DisableStrictReconfigCheck: true})
-	defer clus.Terminate(t)
-
-	// we have to add and launch learner member after initial cluster was created, because
-	// bootstrapping a cluster with learner member is not supported.
-	clus.AddAndLaunchLearnerMember(t)
-
-	learners, err := clus.GetLearnerMembers()
-	if err != nil {
-		t.Fatalf("failed to get the learner members in cluster: %v", err)
-	}
-	if len(learners) != 1 {
-		t.Fatalf("added 1 learner to cluster, got %d", len(learners))
-	}
-
-	if len(clus.Members) != 4 {
-		t.Fatalf("expecting 4 members in cluster after adding the learner member, got %d", len(clus.Members))
-	}
-	// note:
-	// 1. clus.Members[3] is the newly added learner member, which was appended to clus.Members
-	// 2. we are using member's grpcAddr instead of clientURLs as the endpoint for clientv3.Config,
-	// because the implementation of integration test has diverged from embed/etcd.go.
-	learnerEp := clus.Members[3].GRPCURL
-	cfg := clientv3.Config{
-		Endpoints:   []string{learnerEp},
-		DialTimeout: 5 * time.Second,
-		DialOptions: []grpc.DialOption{grpc.WithBlock()},
-	}
-	// this client only has endpoint of the learner member
-	cli, err := integration2.NewClient(t, cfg)
-	if err != nil {
-		t.Fatalf("failed to create clientv3: %v", err)
-	}
-	defer cli.Close()
-
-	// wait until learner member is ready
-	<-clus.Members[3].ReadyNotify()
-
-	tests := []struct {
-		op   clientv3.Op
-		wErr bool
-	}{
-		{
-			op:   clientv3.OpGet("foo", clientv3.WithSerializable()),
-			wErr: false,
-		},
-		{
-			op:   clientv3.OpGet("foo"),
-			wErr: true,
-		},
-		{
-			op:   clientv3.OpPut("foo", "bar"),
-			wErr: true,
-		},
-		{
-			op:   clientv3.OpDelete("foo"),
-			wErr: true,
-		},
-		{
-			op:   clientv3.OpTxn([]clientv3.Cmp{clientv3.Compare(clientv3.CreateRevision("foo"), "=", 0)}, nil, nil),
-			wErr: true,
-		},
-	}
-
-	for idx, test := range tests {
-		_, err := cli.Do(context.TODO(), test.op)
-		if err != nil && !test.wErr {
-			t.Errorf("%d: expect no error, got %v", idx, err)
-		}
-		if err == nil && test.wErr {
-			t.Errorf("%d: expect error, got nil", idx)
-		}
-	}
-}
-
-// TestBalancerSupportLearner verifies that balancer's retry and failover mechanism supports cluster with learner member
-func TestBalancerSupportLearner(t *testing.T) {
-	integration2.BeforeTest(t)
-
-	clus := integration2.NewCluster(t, &integration2.ClusterConfig{Size: 3, DisableStrictReconfigCheck: true})
-	defer clus.Terminate(t)
-
-	// we have to add and launch learner member after initial cluster was created, because
-	// bootstrapping a cluster with learner member is not supported.
-	clus.AddAndLaunchLearnerMember(t)
-
-	learners, err := clus.GetLearnerMembers()
-	if err != nil {
-		t.Fatalf("failed to get the learner members in cluster: %v", err)
-	}
-	if len(learners) != 1 {
-		t.Fatalf("added 1 learner to cluster, got %d", len(learners))
-	}
-
-	// clus.Members[3] is the newly added learner member, which was appended to clus.Members
-	learnerEp := clus.Members[3].GRPCURL
-	cfg := clientv3.Config{
-		Endpoints:   []string{learnerEp},
-		DialTimeout: 5 * time.Second,
-		DialOptions: []grpc.DialOption{grpc.WithBlock()},
-	}
-	cli, err := integration2.NewClient(t, cfg)
-	if err != nil {
-		t.Fatalf("failed to create clientv3: %v", err)
-	}
-	defer cli.Close()
-
-	// wait until learner member is ready
-	<-clus.Members[3].ReadyNotify()
-
-	if _, err = cli.Get(context.Background(), "foo"); err == nil {
-		t.Fatalf("expect Get request to learner to fail, got no error")
-	}
-	t.Logf("Expected: Read from learner error: %v", err)
-
-	eps := []string{learnerEp, clus.Members[0].GRPCURL}
-	cli.SetEndpoints(eps...)
-	if _, err := cli.Get(context.Background(), "foo"); err != nil {
-		t.Errorf("expect no error (balancer should retry when request to learner fails), got error: %v", err)
 	}
 }

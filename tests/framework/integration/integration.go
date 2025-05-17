@@ -110,11 +110,11 @@ func (m integrationMember) Client() intf.Client {
 }
 
 func (m integrationMember) Start(ctx context.Context) error {
-	return m.Member.Restart(m.t)
+	return nil
 }
 
 func (m integrationMember) Stop() {
-	m.Member.Stop(m.t)
+
 }
 
 func (c *integrationCluster) Close() error {

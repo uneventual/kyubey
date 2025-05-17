@@ -34,9 +34,6 @@ import (
 // Prefer dedicated clusters for substantial test-cases.
 
 type LazyCluster interface {
-	// EndpointsHTTP - exposes connection points for http endpoints.
-	// Calls to this method might initialize the cluster.
-	EndpointsHTTP() []string
 
 	// EndpointsGRPC - exposes connection points for client v3.
 	// Calls to this method might initialize the cluster.
@@ -101,10 +98,6 @@ func (lc *lazyCluster) Terminate() {
 		lc.tb.Logf("Closer...")
 		lc.closer()
 	}
-}
-
-func (lc *lazyCluster) EndpointsHTTP() []string {
-	return []string{lc.Cluster().Members[0].URL()}
 }
 
 func (lc *lazyCluster) EndpointsGRPC() []string {
