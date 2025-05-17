@@ -180,9 +180,9 @@ nbdist/
 
 ### VisualStudioCode ###
 .vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
+
 
 fdb.cluster
+
+*.deb
+*.log
