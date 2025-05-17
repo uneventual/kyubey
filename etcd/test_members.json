@@ -1,0 +1,52 @@
+[
+    {
+      "name": "example-member-1",
+      "port": "15001",
+      "grpcUrl": "localhost:15001",
+      "clientMaxCallSendMsgSize": 10000000,
+      "clientMaxCallRecvMsgSize": 10000000,
+      "useTcp": true,
+      "useIp": true,
+      "useBridge": false 
+    },
+    {
+      "name": "example-member-2",
+      "port": "15002",
+      "grpcUrl": "localhost:15002",
+      "clientMaxCallSendMsgSize": 10000000,
+      "clientMaxCallRecvMsgSize": 10000000,
+      "useTcp": true,
+      "useIp": true,
+      "useBridge": false
+    },
+    {
+      "name": "example-member-3",
+      "port": "15003", 
+      "grpcUrl": "localhost:15003",
+      "clientMaxCallSendMsgSize": 10000000,
+      "clientMaxCallRecvMsgSize": 10000000,
+      "useTcp": true,
+      "useIp": true,
+      "useBridge":false 
+    },
+ {
+      "name": "example-member-4",
+      "port": "15004", 
+      "grpcUrl": "localhost:15004",
+      "clientMaxCallSendMsgSize": 10000000,
+      "clientMaxCallRecvMsgSize": 10000000,
+      "useTcp": true,
+      "useIp": true,
+      "useBridge":false 
+    },
+ {
+      "name": "example-member-5",
+      "port": "15005", 
+      "grpcUrl": "localhost:15005",
+      "clientMaxCallSendMsgSize": 10000000,
+      "clientMaxCallRecvMsgSize": 10000000,
+      "useTcp": true,
+      "useIp": true,
+      "useBridge":false 
+    }
+  ]

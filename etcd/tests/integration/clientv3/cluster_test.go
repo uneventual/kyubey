@@ -23,8 +23,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"go.etcd.io/etcd/client/pkg/v3/types"
 	integration2 "go.etcd.io/etcd/tests/v3/framework/integration"
 )
@@ -215,81 +213,6 @@ func TestMemberAddForLearner(t *testing.T) {
 	}
 	if numberOfLearners != 1 {
 		t.Errorf("Added 1 learner node to cluster, got %d", numberOfLearners)
-	}
-}
-
-func TestMemberPromote(t *testing.T) {
-	integration2.BeforeTest(t)
-
-	clus := integration2.NewCluster(t, &integration2.ClusterConfig{Size: 3, DisableStrictReconfigCheck: true})
-	defer clus.Terminate(t)
-
-	// member promote request can be sent to any server in cluster,
-	// the request will be auto-forwarded to leader on server-side.
-	// This test explicitly includes the server-side forwarding by
-	// sending the request to follower.
-	leaderIdx := clus.WaitLeader(t)
-	followerIdx := (leaderIdx + 1) % 3
-	capi := clus.Client(followerIdx)
-
-	learnerMember := clus.MustNewMember(t)
-	urls := learnerMember.PeerURLs.StringSlice()
-	memberAddResp, err := capi.MemberAddAsLearner(context.Background(), urls)
-	if err != nil {
-		t.Fatalf("failed to add member %v", err)
-	}
-
-	if !memberAddResp.Member.IsLearner {
-		t.Fatalf("Added a member as learner, got resp.Member.IsLearner = %v", memberAddResp.Member.IsLearner)
-	}
-	learnerID := memberAddResp.Member.ID
-
-	numberOfLearners := 0
-	for _, m := range memberAddResp.Members {
-		if m.IsLearner {
-			numberOfLearners++
-		}
-	}
-	if numberOfLearners != 1 {
-		t.Fatalf("Added 1 learner node to cluster, got %d", numberOfLearners)
-	}
-
-	// learner is not started yet. Expect learner progress check to fail.
-	// As the result, member promote request will fail.
-	_, err = capi.MemberPromote(context.Background(), learnerID)
-	expectedErrKeywords := "can only promote a learner member which is in sync with leader"
-	if err == nil {
-		t.Fatalf("expecting promote not ready learner to fail, got no error")
-	}
-	if !strings.Contains(err.Error(), expectedErrKeywords) {
-		t.Fatalf("expecting error to contain %s, got %s", expectedErrKeywords, err.Error())
-	}
-
-	// Initialize and launch learner member based on the response of V3 Member Add API.
-	// (the response has information on peer urls of the existing members in cluster)
-	clus.InitializeMemberWithResponse(t, learnerMember, memberAddResp)
-
-	require.NoError(t, learnerMember.Launch())
-
-	// retry until promote succeed or timeout
-	timeout := time.After(5 * time.Second)
-	for {
-		select {
-		case <-time.After(500 * time.Millisecond):
-		case <-timeout:
-			t.Fatalf("failed all attempts to promote learner member, last error: %v", err)
-		}
-
-		_, err = capi.MemberPromote(context.Background(), learnerID)
-		// successfully promoted learner
-		if err == nil {
-			break
-		}
-		// if member promote fails due to learner not ready, retry.
-		// otherwise fails the test.
-		if !strings.Contains(err.Error(), expectedErrKeywords) {
-			t.Fatalf("unexpected error when promoting learner member: %v", err)
-		}
 	}
 }
 

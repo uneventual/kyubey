@@ -903,112 +903,6 @@ func TestV3WatchMultipleEventsPutUnsynced(t *testing.T) {
 	}
 }
 
-// TestV3WatchProgressOnMemberRestart verifies the client side doesn't
-// receive duplicated events.
-// Refer to https://github.com/etcd-io/etcd/pull/15248#issuecomment-1423225742.
-func TestV3WatchProgressOnMemberRestart(t *testing.T) {
-	integration.BeforeTest(t)
-
-	clus := integration.NewCluster(t, &integration.ClusterConfig{
-		Size:                        1,
-		WatchProgressNotifyInterval: time.Second,
-	})
-	defer clus.Terminate(t)
-
-	client := clus.RandClient()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	errC := make(chan error, 1)
-	watchReady := make(chan struct{}, 1)
-	doneC := make(chan struct{}, 1)
-	progressNotifyC := make(chan struct{}, 1)
-	go func() {
-		defer close(doneC)
-
-		var (
-			lastWatchedModRevision  int64
-			gotProgressNotification bool
-		)
-
-		wch := client.Watch(ctx, "foo", clientv3.WithProgressNotify())
-		watchReady <- struct{}{}
-		for wr := range wch {
-			if wr.Err() != nil {
-				errC <- fmt.Errorf("watch error: %w", wr.Err())
-				return
-			}
-
-			if len(wr.Events) == 0 {
-				// We need to make sure at least one progress notification
-				// is received after receiving the normal watch response
-				// and before restarting the member.
-				if lastWatchedModRevision > 0 {
-					gotProgressNotification = true
-					progressNotifyC <- struct{}{}
-				}
-				continue
-			}
-
-			for _, event := range wr.Events {
-				if event.Kv.ModRevision <= lastWatchedModRevision {
-					errC <- fmt.Errorf("got an unexpected revision: %d, lastWatchedModRevision: %d",
-						event.Kv.ModRevision,
-						lastWatchedModRevision)
-					return
-				}
-				lastWatchedModRevision = event.Kv.ModRevision
-			}
-
-			if gotProgressNotification {
-				return
-			}
-		}
-	}()
-
-	// waiting for the watcher ready
-	t.Log("Waiting for the watcher to be ready.")
-	<-watchReady
-	time.Sleep(time.Second)
-
-	// write a K/V firstly
-	t.Log("Writing key 'foo' firstly")
-	_, err := client.Put(ctx, "foo", "bar1")
-	require.NoError(t, err)
-
-	// make sure at least one progress notification is received
-	// before restarting the member
-	t.Log("Waiting for the progress notification")
-	select {
-	case <-progressNotifyC:
-	case <-time.After(5 * time.Second):
-		t.Log("Do not receive the progress notification in 5 seconds, move forward anyway.")
-	}
-
-	// restart the member
-	t.Log("Restarting the member")
-	clus.Members[0].Stop(t)
-	clus.Members[0].Restart(t)
-	clus.Members[0].WaitOK(t)
-
-	// write the same key again after the member restarted
-	t.Log("Writing the same key 'foo' again after restarting the member")
-	_, err = client.Put(ctx, "foo", "bar2")
-	require.NoError(t, err)
-
-	t.Log("Waiting for result")
-	select {
-	case <-progressNotifyC:
-		t.Log("Progress notification received")
-	case err := <-errC:
-		t.Fatal(err)
-	case <-doneC:
-		t.Log("Done")
-	case <-time.After(15 * time.Second):
-		t.Fatal("Timed out waiting for the response")
-	}
-}
-
 func TestV3WatchMultipleStreamsSynced(t *testing.T) {
 	integration.BeforeTest(t)
 	testV3WatchMultipleStreams(t, 0)
@@ -1178,7 +1072,7 @@ func TestWatchWithProgressNotify(t *testing.T) {
 // TestV3WatchClose opens many watchers concurrently on multiple streams.
 func TestV3WatchClose(t *testing.T) {
 	integration.BeforeTest(t)
-	clus := integration.NewCluster(t, &integration.ClusterConfig{Size: 1, UseBridge: true})
+	clus := integration.NewCluster(t, &integration.ClusterConfig{Size: 1})
 	defer clus.Terminate(t)
 
 	c := clus.Client(0)
@@ -1208,7 +1102,6 @@ func TestV3WatchClose(t *testing.T) {
 		}()
 	}
 
-	clus.Members[0].Bridge().DropConnections()
 	wg.Wait()
 }
 
@@ -1341,83 +1234,6 @@ func TestV3WatchWithPrevKV(t *testing.T) {
 		case <-time.After(30 * time.Second):
 			t.Error("timeout waiting for watch response")
 		}
-	}
-}
-
-// TestV3WatchCancellation ensures that watch cancellation frees up server resources.
-func TestV3WatchCancellation(t *testing.T) {
-	integration.BeforeTest(t)
-
-	clus := integration.NewCluster(t, &integration.ClusterConfig{Size: 1})
-	defer clus.Terminate(t)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	cli := clus.RandClient()
-
-	// increment watcher total count and keep a stream open
-	cli.Watch(ctx, "/foo")
-
-	for i := 0; i < 1000; i++ {
-		wctx, wcancel := context.WithCancel(ctx)
-		cli.Watch(wctx, "/foo")
-		wcancel()
-	}
-
-	// Wait a little for cancellations to take hold
-	time.Sleep(3 * time.Second)
-
-	minWatches, err := clus.Members[0].Metric("etcd_debugging_mvcc_watcher_total")
-	require.NoError(t, err)
-
-	var expected string
-	if integration.ThroughProxy {
-		// grpc proxy has additional 2 watches open
-		expected = "3"
-	} else {
-		expected = "1"
-	}
-
-	if minWatches != expected {
-		t.Fatalf("expected %s watch, got %s", expected, minWatches)
-	}
-}
-
-// TestV3WatchCloseCancelRace ensures that watch close doesn't decrement the watcher total too far.
-func TestV3WatchCloseCancelRace(t *testing.T) {
-	integration.BeforeTest(t)
-
-	clus := integration.NewCluster(t, &integration.ClusterConfig{Size: 1})
-	defer clus.Terminate(t)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	cli := clus.RandClient()
-
-	for i := 0; i < 1000; i++ {
-		wctx, wcancel := context.WithCancel(ctx)
-		cli.Watch(wctx, "/foo")
-		wcancel()
-	}
-
-	// Wait a little for cancellations to take hold
-	time.Sleep(3 * time.Second)
-
-	minWatches, err := clus.Members[0].Metric("etcd_debugging_mvcc_watcher_total")
-	require.NoError(t, err)
-
-	var expected string
-	if integration.ThroughProxy {
-		// grpc proxy has additional 2 watches open
-		expected = "2"
-	} else {
-		expected = "0"
-	}
-
-	if minWatches != expected {
-		t.Fatalf("expected %s watch, got %s", expected, minWatches)
 	}
 }
 

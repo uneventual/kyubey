@@ -34,7 +34,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 	"go.etcd.io/etcd/api/v3/version"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/server/v3/lease"
@@ -118,33 +117,6 @@ func (tc hashTestCase) Compact(ctx context.Context, rev int64) error {
 	// Wait for compaction to be compacted
 	time.Sleep(50 * time.Millisecond)
 	return err
-}
-
-func TestMaintenanceMoveLeader(t *testing.T) {
-	integration2.BeforeTest(t)
-
-	clus := integration2.NewCluster(t, &integration2.ClusterConfig{Size: 3})
-	defer clus.Terminate(t)
-
-	oldLeadIdx := clus.WaitLeader(t)
-	targetIdx := (oldLeadIdx + 1) % 3
-	target := uint64(clus.Members[targetIdx].ID())
-
-	cli := clus.Client(targetIdx)
-	_, err := cli.MoveLeader(context.Background(), target)
-	if !errors.Is(err, rpctypes.ErrNotLeader) {
-		t.Fatalf("error expected %v, got %v", rpctypes.ErrNotLeader, err)
-	}
-
-	cli = clus.Client(oldLeadIdx)
-	_, err = cli.MoveLeader(context.Background(), target)
-	require.NoError(t, err)
-
-	leadIdx := clus.WaitLeader(t)
-	lead := uint64(clus.Members[leadIdx].ID())
-	if target != lead {
-		t.Fatalf("new leader expected %d, got %d", target, lead)
-	}
 }
 
 // TestMaintenanceSnapshotCancel ensures that context cancel

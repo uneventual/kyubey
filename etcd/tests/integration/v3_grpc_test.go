@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
-	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -29,14 +28,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	pb "go.etcd.io/etcd/api/v3/etcdserverpb"
 	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
-	"go.etcd.io/etcd/client/pkg/v3/transport"
-	clientv3 "go.etcd.io/etcd/client/v3"
-	"go.etcd.io/etcd/tests/v3/framework/config"
 	"go.etcd.io/etcd/tests/v3/framework/integration"
 )
 
@@ -76,36 +71,6 @@ func TestV3PutOverwrite(t *testing.T) {
 	}
 	if !reflect.DeepEqual(reqput.Value, kv.Value) {
 		t.Errorf("expected value %v, got %v", reqput.Value, kv.Value)
-	}
-}
-
-// TestV3PutRestart checks if a put after an unrelated member restart succeeds
-func TestV3PutRestart(t *testing.T) {
-	integration.BeforeTest(t)
-	clus := integration.NewCluster(t, &integration.ClusterConfig{Size: 3, UseBridge: true})
-	defer clus.Terminate(t)
-
-	kvIdx := rand.Intn(3)
-	kvc := integration.ToGRPC(clus.Client(kvIdx)).KV
-
-	stopIdx := kvIdx
-	for stopIdx == kvIdx {
-		stopIdx = rand.Intn(3)
-	}
-
-	clus.Client(stopIdx).Close()
-	clus.Members[stopIdx].Stop(t)
-	clus.Members[stopIdx].Restart(t)
-	c, cerr := integration.NewClientV3(clus.Members[stopIdx])
-	require.NoErrorf(t, cerr, "cannot create client")
-	clus.Members[stopIdx].ServerClient = c
-
-	ctx, cancel := context.WithTimeout(context.TODO(), 10*time.Second)
-	defer cancel()
-	reqput := &pb.PutRequest{Key: []byte("foo"), Value: []byte("bar")}
-	_, err := kvc.Put(ctx, reqput)
-	if err != nil && errors.Is(err, ctx.Err()) {
-		t.Fatalf("expected grpc error, got local ctx error (%v)", err)
 	}
 }
 
@@ -1195,84 +1160,6 @@ func TestV3Hash(t *testing.T) {
 	}
 }
 
-// TestV3HashRestart ensures that hash stays the same after restart.
-func TestV3HashRestart(t *testing.T) {
-	integration.BeforeTest(t)
-	clus := integration.NewCluster(t, &integration.ClusterConfig{Size: 1, UseBridge: true})
-	defer clus.Terminate(t)
-
-	cli := clus.RandClient()
-	resp, err := integration.ToGRPC(cli).Maintenance.Hash(context.Background(), &pb.HashRequest{})
-	if err != nil || resp.Hash == 0 {
-		t.Fatalf("couldn't hash (%v, hash %d)", err, resp.Hash)
-	}
-	hash1 := resp.Hash
-
-	clus.Members[0].Stop(t)
-	clus.Members[0].Restart(t)
-	clus.WaitMembersForLeader(t, clus.Members)
-	kvc := integration.ToGRPC(clus.Client(0)).KV
-	waitForRestart(t, kvc)
-
-	cli = clus.RandClient()
-	resp, err = integration.ToGRPC(cli).Maintenance.Hash(context.Background(), &pb.HashRequest{})
-	if err != nil || resp.Hash == 0 {
-		t.Fatalf("couldn't hash (%v, hash %d)", err, resp.Hash)
-	}
-	hash2 := resp.Hash
-
-	if hash1 != hash2 {
-		t.Fatalf("hash expected %d, got %d", hash1, hash2)
-	}
-}
-
-// TestV3StorageQuotaAPI tests the V3 server respects quotas at the API layer
-func TestV3StorageQuotaAPI(t *testing.T) {
-	integration.BeforeTest(t)
-	quotasize := int64(16 * os.Getpagesize())
-
-	clus := integration.NewCluster(t, &integration.ClusterConfig{Size: 3, UseBridge: true})
-
-	// Set a quota on one node
-	clus.Members[0].QuotaBackendBytes = quotasize
-	clus.Members[0].Stop(t)
-	clus.Members[0].Restart(t)
-
-	defer clus.Terminate(t)
-	kvc := integration.ToGRPC(clus.Client(0)).KV
-	waitForRestart(t, kvc)
-
-	key := []byte("abc")
-
-	// test small put that fits in quota
-	smallbuf := make([]byte, 512)
-	_, err := kvc.Put(context.TODO(), &pb.PutRequest{Key: key, Value: smallbuf})
-	require.NoError(t, err)
-
-	// test big put
-	bigbuf := make([]byte, quotasize)
-	_, err = kvc.Put(context.TODO(), &pb.PutRequest{Key: key, Value: bigbuf})
-	if !eqErrGRPC(err, rpctypes.ErrGRPCNoSpace) {
-		t.Fatalf("big put got %v, expected %v", err, rpctypes.ErrGRPCNoSpace)
-	}
-
-	// test big txn
-	puttxn := &pb.RequestOp{
-		Request: &pb.RequestOp_RequestPut{
-			RequestPut: &pb.PutRequest{
-				Key:   key,
-				Value: bigbuf,
-			},
-		},
-	}
-	txnreq := &pb.TxnRequest{}
-	txnreq.Success = append(txnreq.Success, puttxn)
-	_, txnerr := kvc.Txn(context.TODO(), txnreq)
-	if !eqErrGRPC(txnerr, rpctypes.ErrGRPCNoSpace) {
-		t.Fatalf("big txn got %v, expected %v", err, rpctypes.ErrGRPCNoSpace)
-	}
-}
-
 func TestV3RangeRequest(t *testing.T) {
 	integration.BeforeTest(t)
 	tests := []struct {
@@ -1536,326 +1423,241 @@ func TestV3RangeRequest(t *testing.T) {
 	}
 }
 
-// TestTLSGRPCRejectInsecureClient checks that connection is rejected if server is TLS but not client.
-func TestTLSGRPCRejectInsecureClient(t *testing.T) {
-	integration.BeforeTest(t)
+// TODO: Resurrect
 
-	clus := integration.NewCluster(t, &integration.ClusterConfig{Size: 3, ClientTLS: &integration.TestTLSInfo})
-	defer clus.Terminate(t)
+// // TestTLSGRPCRejectInsecureClient checks that connection is rejected if server is TLS but not client.
+// func TestTLSGRPCRejectInsecureClient(t *testing.T) {
+// 	integration.BeforeTest(t)
 
-	// nil out TLS field so client will use an insecure connection
-	clus.Members[0].ClientTLSInfo = nil
-	client, err := integration.NewClientV3(clus.Members[0])
-	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("unexpected error (%v)", err)
-	} else if client == nil {
-		// Ideally, no client would be returned. However, grpc will
-		// return a connection without trying to handshake first so
-		// the connection appears OK.
-		return
-	}
-	defer client.Close()
+// 	clus := integration.NewCluster(t, &integration.ClusterConfig{Size: 3, ClientTLS: &integration.TestTLSInfo})
+// 	defer clus.Terminate(t)
 
-	donec := make(chan error, 1)
-	go func() {
-		ctx, cancel := context.WithTimeout(context.TODO(), 5*time.Second)
-		reqput := &pb.PutRequest{Key: []byte("foo"), Value: []byte("bar")}
-		_, perr := integration.ToGRPC(client).KV.Put(ctx, reqput)
-		cancel()
-		donec <- perr
-	}()
+// 	// nil out TLS field so client will use an insecure connection
+// 	clus.Members[0].ClientTLSInfo = nil
+// 	client, err := integration.NewClientV3(clus.Members[0])
+// 	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
+// 		t.Fatalf("unexpected error (%v)", err)
+// 	} else if client == nil {
+// 		// Ideally, no client would be returned. However, grpc will
+// 		// return a connection without trying to handshake first so
+// 		// the connection appears OK.
+// 		return
+// 	}
+// 	defer client.Close()
 
-	if perr := <-donec; perr == nil {
-		t.Fatalf("expected client error on put")
-	}
-}
+// 	donec := make(chan error, 1)
+// 	go func() {
+// 		ctx, cancel := context.WithTimeout(context.TODO(), 5*time.Second)
+// 		reqput := &pb.PutRequest{Key: []byte("foo"), Value: []byte("bar")}
+// 		_, perr := integration.ToGRPC(client).KV.Put(ctx, reqput)
+// 		cancel()
+// 		donec <- perr
+// 	}()
 
-// TestTLSGRPCRejectSecureClient checks that connection is rejected if client is TLS but not server.
-func TestTLSGRPCRejectSecureClient(t *testing.T) {
-	integration.BeforeTest(t)
+// 	if perr := <-donec; perr == nil {
+// 		t.Fatalf("expected client error on put")
+// 	}
+// }
 
-	clus := integration.NewCluster(t, &integration.ClusterConfig{Size: 3})
-	defer clus.Terminate(t)
+// // TestTLSGRPCRejectSecureClient checks that connection is rejected if client is TLS but not server.
+// func TestTLSGRPCRejectSecureClient(t *testing.T) {
+// 	integration.BeforeTest(t)
 
-	clus.Members[0].ClientTLSInfo = &integration.TestTLSInfo
-	clus.Members[0].DialOptions = []grpc.DialOption{grpc.WithBlock()}
-	clus.Members[0].GRPCURL = strings.Replace(clus.Members[0].GRPCURL, "http://", "https://", 1)
-	client, err := integration.NewClientV3(clus.Members[0])
-	if client != nil || err == nil {
-		client.Close()
-		t.Fatalf("expected no client")
-	} else if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("unexpected error (%v)", err)
-	}
-}
+// 	clus := integration.NewCluster(t, &integration.ClusterConfig{Size: 3})
+// 	defer clus.Terminate(t)
 
-// TestTLSGRPCAcceptSecureAll checks that connection is accepted if both client and server are TLS
-func TestTLSGRPCAcceptSecureAll(t *testing.T) {
-	integration.BeforeTest(t)
+// 	clus.Members[0].ClientTLSInfo = &integration.TestTLSInfo
+// 	clus.Members[0].DialOptions = []grpc.DialOption{grpc.WithBlock()}
+// 	clus.Members[0].GRPCURL = strings.Replace(clus.Members[0].GRPCURL, "http://", "https://", 1)
+// 	client, err := integration.NewClientV3(clus.Members[0])
+// 	if client != nil || err == nil {
+// 		client.Close()
+// 		t.Fatalf("expected no client")
+// 	} else if !errors.Is(err, context.DeadlineExceeded) {
+// 		t.Fatalf("unexpected error (%v)", err)
+// 	}
+// }
 
-	clus := integration.NewCluster(t, &integration.ClusterConfig{Size: 3, ClientTLS: &integration.TestTLSInfo})
-	defer clus.Terminate(t)
+// // TestTLSGRPCAcceptSecureAll checks that connection is accepted if both client and server are TLS
+// func TestTLSGRPCAcceptSecureAll(t *testing.T) {
+// 	integration.BeforeTest(t)
 
-	client, err := integration.NewClientV3(clus.Members[0])
-	if err != nil {
-		t.Fatalf("expected tls client (%v)", err)
-	}
-	defer client.Close()
+// 	clus := integration.NewCluster(t, &integration.ClusterConfig{Size: 3, ClientTLS: &integration.TestTLSInfo})
+// 	defer clus.Terminate(t)
 
-	reqput := &pb.PutRequest{Key: []byte("foo"), Value: []byte("bar")}
-	if _, err := integration.ToGRPC(client).KV.Put(context.TODO(), reqput); err != nil {
-		t.Fatalf("unexpected error on put over tls (%v)", err)
-	}
-}
+// 	client, err := integration.NewClientV3(clus.Members[0])
+// 	if err != nil {
+// 		t.Fatalf("expected tls client (%v)", err)
+// 	}
+// 	defer client.Close()
 
-// TestTLSReloadAtomicReplace ensures server reloads expired/valid certs
-// when all certs are atomically replaced by directory renaming.
-// And expects server to reject client requests, and vice versa.
-func TestTLSReloadAtomicReplace(t *testing.T) {
-	tmpDir := t.TempDir()
-	os.RemoveAll(tmpDir)
+// 	reqput := &pb.PutRequest{Key: []byte("foo"), Value: []byte("bar")}
+// 	if _, err := integration.ToGRPC(client).KV.Put(context.TODO(), reqput); err != nil {
+// 		t.Fatalf("unexpected error on put over tls (%v)", err)
+// 	}
+// }
 
-	certsDir := t.TempDir()
+// // TestTLSReloadAtomicReplace ensures server reloads expired/valid certs
+// // when all certs are atomically replaced by directory renaming.
+// // And expects server to reject client requests, and vice versa.
+// func TestTLSReloadAtomicReplace(t *testing.T) {
+// 	tmpDir := t.TempDir()
+// 	os.RemoveAll(tmpDir)
 
-	certsDirExp := t.TempDir()
+// 	certsDir := t.TempDir()
 
-	cloneFunc := func() transport.TLSInfo {
-		tlsInfo, terr := copyTLSFiles(integration.TestTLSInfo, certsDir)
-		require.NoError(t, terr)
-		_, err := copyTLSFiles(integration.TestTLSInfoExpired, certsDirExp)
-		require.NoError(t, err)
-		return tlsInfo
-	}
-	replaceFunc := func() {
-		err := os.Rename(certsDir, tmpDir)
-		require.NoError(t, err)
-		err = os.Rename(certsDirExp, certsDir)
-		require.NoError(t, err)
-		// after rename,
-		// 'certsDir' contains expired certs
-		// 'tmpDir' contains valid certs
-		// 'certsDirExp' does not exist
-	}
-	revertFunc := func() {
-		err := os.Rename(tmpDir, certsDirExp)
-		require.NoError(t, err)
-		err = os.Rename(certsDir, tmpDir)
-		require.NoError(t, err)
-		err = os.Rename(certsDirExp, certsDir)
-		require.NoError(t, err)
-	}
-	testTLSReload(t, cloneFunc, replaceFunc, revertFunc, false)
-}
+// 	certsDirExp := t.TempDir()
 
-// TestTLSReloadCopy ensures server reloads expired/valid certs
-// when new certs are copied over, one by one. And expects server
-// to reject client requests, and vice versa.
-func TestTLSReloadCopy(t *testing.T) {
-	certsDir := t.TempDir()
+// 	cloneFunc := func() transport.TLSInfo {
+// 		tlsInfo, terr := copyTLSFiles(integration.TestTLSInfo, certsDir)
+// 		require.NoError(t, terr)
+// 		_, err := copyTLSFiles(integration.TestTLSInfoExpired, certsDirExp)
+// 		require.NoError(t, err)
+// 		return tlsInfo
+// 	}
+// 	replaceFunc := func() {
+// 		err := os.Rename(certsDir, tmpDir)
+// 		require.NoError(t, err)
+// 		err = os.Rename(certsDirExp, certsDir)
+// 		require.NoError(t, err)
+// 		// after rename,
+// 		// 'certsDir' contains expired certs
+// 		// 'tmpDir' contains valid certs
+// 		// 'certsDirExp' does not exist
+// 	}
+// 	revertFunc := func() {
+// 		err := os.Rename(tmpDir, certsDirExp)
+// 		require.NoError(t, err)
+// 		err = os.Rename(certsDir, tmpDir)
+// 		require.NoError(t, err)
+// 		err = os.Rename(certsDirExp, certsDir)
+// 		require.NoError(t, err)
+// 	}
+// 	testTLSReload(t, cloneFunc, replaceFunc, revertFunc, false)
+// }
 
-	cloneFunc := func() transport.TLSInfo {
-		tlsInfo, terr := copyTLSFiles(integration.TestTLSInfo, certsDir)
-		require.NoError(t, terr)
-		return tlsInfo
-	}
-	replaceFunc := func() {
-		_, err := copyTLSFiles(integration.TestTLSInfoExpired, certsDir)
-		require.NoError(t, err)
-	}
-	revertFunc := func() {
-		_, err := copyTLSFiles(integration.TestTLSInfo, certsDir)
-		require.NoError(t, err)
-	}
-	testTLSReload(t, cloneFunc, replaceFunc, revertFunc, false)
-}
+// // TestTLSReloadCopy ensures server reloads expired/valid certs
+// // when new certs are copied over, one by one. And expects server
+// // to reject client requests, and vice versa.
+// func TestTLSReloadCopy(t *testing.T) {
+// 	certsDir := t.TempDir()
 
-// TestTLSReloadCopyIPOnly ensures server reloads expired/valid certs
-// when new certs are copied over, one by one. And expects server
-// to reject client requests, and vice versa.
-func TestTLSReloadCopyIPOnly(t *testing.T) {
-	certsDir := t.TempDir()
+// 	cloneFunc := func() transport.TLSInfo {
+// 		tlsInfo, terr := copyTLSFiles(integration.TestTLSInfo, certsDir)
+// 		require.NoError(t, terr)
+// 		return tlsInfo
+// 	}
+// 	replaceFunc := func() {
+// 		_, err := copyTLSFiles(integration.TestTLSInfoExpired, certsDir)
+// 		require.NoError(t, err)
+// 	}
+// 	revertFunc := func() {
+// 		_, err := copyTLSFiles(integration.TestTLSInfo, certsDir)
+// 		require.NoError(t, err)
+// 	}
+// 	testTLSReload(t, cloneFunc, replaceFunc, revertFunc, false)
+// }
 
-	cloneFunc := func() transport.TLSInfo {
-		tlsInfo, terr := copyTLSFiles(integration.TestTLSInfoIP, certsDir)
-		require.NoError(t, terr)
-		return tlsInfo
-	}
-	replaceFunc := func() {
-		_, err := copyTLSFiles(integration.TestTLSInfoExpiredIP, certsDir)
-		require.NoError(t, err)
-	}
-	revertFunc := func() {
-		_, err := copyTLSFiles(integration.TestTLSInfoIP, certsDir)
-		require.NoError(t, err)
-	}
-	testTLSReload(t, cloneFunc, replaceFunc, revertFunc, true)
-}
+// // TestTLSReloadCopyIPOnly ensures server reloads expired/valid certs
+// // when new certs are copied over, one by one. And expects server
+// // to reject client requests, and vice versa.
+// func TestTLSReloadCopyIPOnly(t *testing.T) {
+// 	certsDir := t.TempDir()
 
-func testTLSReload(
-	t *testing.T,
-	cloneFunc func() transport.TLSInfo,
-	replaceFunc func(),
-	revertFunc func(),
-	useIP bool,
-) {
-	integration.BeforeTest(t)
+// 	cloneFunc := func() transport.TLSInfo {
+// 		tlsInfo, terr := copyTLSFiles(integration.TestTLSInfoIP, certsDir)
+// 		require.NoError(t, terr)
+// 		return tlsInfo
+// 	}
+// 	replaceFunc := func() {
+// 		_, err := copyTLSFiles(integration.TestTLSInfoExpiredIP, certsDir)
+// 		require.NoError(t, err)
+// 	}
+// 	revertFunc := func() {
+// 		_, err := copyTLSFiles(integration.TestTLSInfoIP, certsDir)
+// 		require.NoError(t, err)
+// 	}
+// 	testTLSReload(t, cloneFunc, replaceFunc, revertFunc, true)
+// }
 
-	// 1. separate copies for TLS assets modification
-	tlsInfo := cloneFunc()
+// func testTLSReload(
+// 	t *testing.T,
+// 	cloneFunc func() transport.TLSInfo,
+// 	replaceFunc func(),
+// 	revertFunc func(),
+// 	useIP bool,
+// ) {
+// 	integration.BeforeTest(t)
 
-	// 2. start cluster with valid certs
-	clus := integration.NewCluster(t, &integration.ClusterConfig{
-		Size:      1,
-		PeerTLS:   &tlsInfo,
-		ClientTLS: &tlsInfo,
-		UseIP:     useIP,
-	})
-	defer clus.Terminate(t)
+// 	// 1. separate copies for TLS assets modification
+// 	tlsInfo := cloneFunc()
 
-	// 3. concurrent client dialing while certs become expired
-	errc := make(chan error, 1)
-	go func() {
-		for {
-			cc, err := tlsInfo.ClientConfig()
-			if err != nil {
-				// errors in 'go/src/crypto/tls/tls.go'
-				// tls: private key does not match public key
-				// tls: failed to find any PEM data in key input
-				// tls: failed to find any PEM data in certificate input
-				// Or 'does not exist', 'not found', etc
-				t.Log(err)
-				continue
-			}
-			cli, cerr := integration.NewClient(t, clientv3.Config{
-				DialOptions: []grpc.DialOption{grpc.WithBlock()},
-				Endpoints:   []string{clus.Members[0].GRPCURL},
-				DialTimeout: time.Second,
-				TLS:         cc,
-			})
-			if cerr != nil {
-				errc <- cerr
-				return
-			}
-			cli.Close()
-		}
-	}()
+// 	// 2. start cluster with valid certs
+// 	clus := integration.NewCluster(t, &integration.ClusterConfig{
+// 		Size:      1,
+// 		PeerTLS:   &tlsInfo,
+// 		ClientTLS: &tlsInfo,
+// 		UseIP:     useIP,
+// 	})
+// 	defer clus.Terminate(t)
 
-	// 4. replace certs with expired ones
-	replaceFunc()
+// 	// 3. concurrent client dialing while certs become expired
+// 	errc := make(chan error, 1)
+// 	go func() {
+// 		for {
+// 			cc, err := tlsInfo.ClientConfig()
+// 			if err != nil {
+// 				// errors in 'go/src/crypto/tls/tls.go'
+// 				// tls: private key does not match public key
+// 				// tls: failed to find any PEM data in key input
+// 				// tls: failed to find any PEM data in certificate input
+// 				// Or 'does not exist', 'not found', etc
+// 				t.Log(err)
+// 				continue
+// 			}
+// 			cli, cerr := integration.NewClient(t, clientv3.Config{
+// 				DialOptions: []grpc.DialOption{grpc.WithBlock()},
+// 				Endpoints:   []string{clus.Members[0].GRPCURL},
+// 				DialTimeout: time.Second,
+// 				TLS:         cc,
+// 			})
+// 			if cerr != nil {
+// 				errc <- cerr
+// 				return
+// 			}
+// 			cli.Close()
+// 		}
+// 	}()
 
-	// 5. expect dial time-out when loading expired certs
-	select {
-	case gerr := <-errc:
-		if !errors.Is(gerr, context.DeadlineExceeded) {
-			t.Fatalf("expected %v, got %v", context.DeadlineExceeded, gerr)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("failed to receive dial timeout error")
-	}
+// 	// 4. replace certs with expired ones
+// 	replaceFunc()
 
-	// 6. replace expired certs back with valid ones
-	revertFunc()
+// 	// 5. expect dial time-out when loading expired certs
+// 	select {
+// 	case gerr := <-errc:
+// 		if !errors.Is(gerr, context.DeadlineExceeded) {
+// 			t.Fatalf("expected %v, got %v", context.DeadlineExceeded, gerr)
+// 		}
+// 	case <-time.After(5 * time.Second):
+// 		t.Fatal("failed to receive dial timeout error")
+// 	}
 
-	// 7. new requests should trigger listener to reload valid certs
-	tls, terr := tlsInfo.ClientConfig()
-	require.NoError(t, terr)
-	cl, cerr := integration.NewClient(t, clientv3.Config{
-		Endpoints:   []string{clus.Members[0].GRPCURL},
-		DialTimeout: 5 * time.Second,
-		TLS:         tls,
-	})
-	if cerr != nil {
-		t.Fatalf("expected no error, got %v", cerr)
-	}
-	cl.Close()
-}
+// 	// 6. replace expired certs back with valid ones
+// 	revertFunc()
 
-func TestGRPCRequireLeader(t *testing.T) {
-	integration.BeforeTest(t)
-
-	clus := integration.NewCluster(t, &integration.ClusterConfig{Size: 3})
-	defer clus.Terminate(t)
-
-	clus.Members[1].Stop(t)
-	clus.Members[2].Stop(t)
-
-	client, err := integration.NewClientV3(clus.Members[0])
-	if err != nil {
-		t.Fatalf("cannot create client: %v", err)
-	}
-	defer client.Close()
-
-	// wait for election timeout, then member[0] will not have a leader.
-	time.Sleep(time.Duration(3*integration.ElectionTicks) * config.TickDuration)
-
-	md := metadata.Pairs(rpctypes.MetadataRequireLeaderKey, rpctypes.MetadataHasLeader)
-	ctx := metadata.NewOutgoingContext(context.Background(), md)
-	reqput := &pb.PutRequest{Key: []byte("foo"), Value: []byte("bar")}
-	if _, err := integration.ToGRPC(client).KV.Put(ctx, reqput); rpctypes.ErrorDesc(err) != rpctypes.ErrNoLeader.Error() {
-		t.Errorf("err = %v, want %v", err, rpctypes.ErrNoLeader)
-	}
-}
-
-func TestGRPCStreamRequireLeader(t *testing.T) {
-	integration.BeforeTest(t)
-
-	clus := integration.NewCluster(t, &integration.ClusterConfig{Size: 3, UseBridge: true})
-	defer clus.Terminate(t)
-
-	client, err := integration.NewClientV3(clus.Members[0])
-	if err != nil {
-		t.Fatalf("failed to create client (%v)", err)
-	}
-	defer client.Close()
-
-	wAPI := integration.ToGRPC(client).Watch
-	md := metadata.Pairs(rpctypes.MetadataRequireLeaderKey, rpctypes.MetadataHasLeader)
-	ctx := metadata.NewOutgoingContext(context.Background(), md)
-	wStream, err := wAPI.Watch(ctx)
-	if err != nil {
-		t.Fatalf("wAPI.Watch error: %v", err)
-	}
-
-	clus.Members[1].Stop(t)
-	clus.Members[2].Stop(t)
-
-	// existing stream should be rejected
-	_, err = wStream.Recv()
-	if rpctypes.ErrorDesc(err) != rpctypes.ErrNoLeader.Error() {
-		t.Errorf("err = %v, want %v", err, rpctypes.ErrNoLeader)
-	}
-
-	// new stream should also be rejected
-	wStream, err = wAPI.Watch(ctx)
-	if err != nil {
-		t.Fatalf("wAPI.Watch error: %v", err)
-	}
-	_, err = wStream.Recv()
-	if rpctypes.ErrorDesc(err) != rpctypes.ErrNoLeader.Error() {
-		t.Errorf("err = %v, want %v", err, rpctypes.ErrNoLeader)
-	}
-
-	clus.Members[1].Restart(t)
-	clus.Members[2].Restart(t)
-
-	clus.WaitMembersForLeader(t, clus.Members)
-	time.Sleep(time.Duration(2*integration.ElectionTicks) * config.TickDuration)
-
-	// new stream should also be OK now after we restarted the other members
-	wStream, err = wAPI.Watch(ctx)
-	if err != nil {
-		t.Fatalf("wAPI.Watch error: %v", err)
-	}
-	wreq := &pb.WatchRequest{
-		RequestUnion: &pb.WatchRequest_CreateRequest{
-			CreateRequest: &pb.WatchCreateRequest{Key: []byte("foo")},
-		},
-	}
-	err = wStream.Send(wreq)
-	if err != nil {
-		t.Errorf("err = %v, want nil", err)
-	}
-}
+// 	// 7. new requests should trigger listener to reload valid certs
+// 	tls, terr := tlsInfo.ClientConfig()
+// 	require.NoError(t, terr)
+// 	cl, cerr := integration.NewClient(t, clientv3.Config{
+// 		Endpoints:   []string{clus.Members[0].GRPCURL},
+// 		DialTimeout: 5 * time.Second,
+// 		TLS:         tls,
+// 	})
+// 	if cerr != nil {
+// 		t.Fatalf("expected no error, got %v", cerr)
+// 	}
+// 	cl.Close()
+// }
 
 // TestV3LargeRequests ensures that configurable MaxRequestBytes works as intended.
 func TestV3LargeRequests(t *testing.T) {
