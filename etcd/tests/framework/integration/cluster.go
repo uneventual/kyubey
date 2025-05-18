@@ -27,6 +27,8 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest"
 	"google.golang.org/grpc"
 
 	pb "go.etcd.io/etcd/api/v3/etcdserverpb"
@@ -332,6 +334,25 @@ func (p SortableMemberSliceByPeerURLs) Less(i, j int) bool {
 }
 func (p SortableMemberSliceByPeerURLs) Swap(i, j int) { p[i], p[j] = p[j], p[i] }
 
+func memberLogger(t testutil.TB, name string) (*zap.Logger, *testutils.LogObserver) {
+	level := zapcore.InfoLevel
+	if os.Getenv("CLUSTER_DEBUG") != "" {
+		level = zapcore.DebugLevel
+	}
+
+	obCore, logOb := testutils.NewLogObserver(level)
+
+	options := zaptest.WrapOptions(
+		zap.Fields(zap.String("member", name)),
+
+		// copy logged entities to log observer
+		zap.WrapCore(func(oldCore zapcore.Core) zapcore.Core {
+			return zapcore.NewTee(oldCore, obCore)
+		}),
+	)
+	return zaptest.NewLogger(t, zaptest.Level(level), options).Named(name), logOb
+}
+
 // NewCluster returns a launched Cluster with a grpc client connection
 // for each Cluster member.
 func NewCluster(t testutil.TB, cfg *ClusterConfig) *Cluster {
@@ -358,6 +379,16 @@ func NewCluster(t testutil.TB, cfg *ClusterConfig) *Cluster {
 			}
 			ms = members[:cfg.Size]
 			c.LastMemberNum = cfg.Size - 1
+			for _, m := range ms {
+				m.GRPCServerRecorder = &grpctesting.GRPCRecorder{}
+				m.Logger, _ = memberLogger(t, m.Name)
+
+				cli, err := NewClientV3(m)
+				if err != nil {
+					panic("failed to build client")
+				}
+				m.Client = cli
+			}
 		}
 	} else {
 		println("blah", data, err.Error())
@@ -375,7 +406,26 @@ func (c *Cluster) TakeClient(idx int) {
 }
 
 func (c *Cluster) Terminate(t testutil.TB) {
-
+	if t != nil {
+		t.Logf("========= Cluster termination started =====================")
+	}
+	for _, m := range c.Members {
+		if m.Client != nil {
+			m.Client.Close()
+		}
+	}
+	var wg sync.WaitGroup
+	wg.Add(len(c.Members))
+	for _, m := range c.Members {
+		go func(mm *Member) {
+			defer wg.Done()
+			// mm.Terminate(t)
+		}(m)
+	}
+	wg.Wait()
+	if t != nil {
+		t.Logf("========= Cluster termination succeeded ===================")
+	}
 }
 
 func (c *Cluster) RandClient() *clientv3.Client {

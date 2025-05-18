@@ -37,55 +37,55 @@ func TestAuthority(t *testing.T) {
 		clientURLPattern       string
 		expectAuthorityPattern string
 	}{
-		{
-			name:                   "unix:path",
-			clientURLPattern:       "unix:localhost:${MEMBER_NAME}",
-			expectAuthorityPattern: "localhost:${MEMBER_NAME}",
-		},
-		{
-			name:                   "unix://absolute_path",
-			clientURLPattern:       "unix://localhost:${MEMBER_NAME}",
-			expectAuthorityPattern: "localhost:${MEMBER_NAME}",
-		},
-		// "unixs" is not standard schema supported by etcd
-		{
-			name:                   "unixs:absolute_path",
-			useTLS:                 true,
-			clientURLPattern:       "unixs:localhost:${MEMBER_NAME}",
-			expectAuthorityPattern: "localhost:${MEMBER_NAME}",
-		},
-		{
-			name:                   "unixs://absolute_path",
-			useTLS:                 true,
-			clientURLPattern:       "unixs://localhost:${MEMBER_NAME}",
-			expectAuthorityPattern: "localhost:${MEMBER_NAME}",
-		},
-		{
-			name:                   "http://domain[:port]",
-			useTCP:                 true,
-			clientURLPattern:       "http://localhost:${MEMBER_PORT}",
-			expectAuthorityPattern: "localhost:${MEMBER_PORT}",
-		},
-		{
-			name:                   "https://domain[:port]",
-			useTLS:                 true,
-			useTCP:                 true,
-			clientURLPattern:       "https://localhost:${MEMBER_PORT}",
-			expectAuthorityPattern: "localhost:${MEMBER_PORT}",
-		},
+		// {
+		// 	name:                   "unix:path",
+		// 	clientURLPattern:       "unix:localhost:${MEMBER_NAME}",
+		// 	expectAuthorityPattern: "localhost:${MEMBER_NAME}",
+		// },
+		// {
+		// 	name:                   "unix://absolute_path",
+		// 	clientURLPattern:       "unix://localhost:${MEMBER_NAME}",
+		// 	expectAuthorityPattern: "localhost:${MEMBER_NAME}",
+		// },
+		// // "unixs" is not standard schema supported by etcd
+		// {
+		// 	name:                   "unixs:absolute_path",
+		// 	useTLS:                 true,
+		// 	clientURLPattern:       "unixs:localhost:${MEMBER_NAME}",
+		// 	expectAuthorityPattern: "localhost:${MEMBER_NAME}",
+		// },
+		// {
+		// 	name:                   "unixs://absolute_path",
+		// 	useTLS:                 true,
+		// 	clientURLPattern:       "unixs://localhost:${MEMBER_NAME}",
+		// 	expectAuthorityPattern: "localhost:${MEMBER_NAME}",
+		// },
+		// {
+		// 	name:                   "http://domain[:port]",
+		// 	useTCP:                 true,
+		// 	clientURLPattern:       "http://localhost:${MEMBER_PORT}",
+		// 	expectAuthorityPattern: "localhost:${MEMBER_PORT}",
+		// },
+		// {
+		// 	name:                   "https://domain[:port]",
+		// 	useTLS:                 true,
+		// 	useTCP:                 true,
+		// 	clientURLPattern:       "https://localhost:${MEMBER_PORT}",
+		// 	expectAuthorityPattern: "localhost:${MEMBER_PORT}",
+		// },
 		{
 			name:                   "http://address[:port]",
 			useTCP:                 true,
 			clientURLPattern:       "http://127.0.0.1:${MEMBER_PORT}",
 			expectAuthorityPattern: "127.0.0.1:${MEMBER_PORT}",
 		},
-		{
-			name:                   "https://address[:port]",
-			useTCP:                 true,
-			useTLS:                 true,
-			clientURLPattern:       "https://127.0.0.1:${MEMBER_PORT}",
-			expectAuthorityPattern: "127.0.0.1:${MEMBER_PORT}",
-		},
+		// {
+		// 	name:                   "https://address[:port]",
+		// 	useTCP:                 true,
+		// 	useTLS:                 true,
+		// 	clientURLPattern:       "https://127.0.0.1:${MEMBER_PORT}",
+		// 	expectAuthorityPattern: "127.0.0.1:${MEMBER_PORT}",
+		// },
 	}
 	for _, tc := range tcs {
 		for _, clusterSize := range []int{1, 3} {

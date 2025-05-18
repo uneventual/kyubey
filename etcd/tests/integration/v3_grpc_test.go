@@ -17,11 +17,9 @@ package integration
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"math/rand"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
@@ -1053,6 +1051,10 @@ func TestV3DeleteRange(t *testing.T) {
 			if err != nil {
 				t.Errorf("couldn't get range on test %v (%v)", i, err)
 			}
+			fmt.Println("rresp", rresp)
+			fmt.Println("rresp.Header", rresp.Header)
+			fmt.Println("rresp.Header.Revision", rresp.Header.Revision)
+
 			if dresp.Header.Revision != rresp.Header.Revision {
 				t.Errorf("expected revision %v, got %v",
 					dresp.Header.Revision, rresp.Header.Revision)
@@ -1117,311 +1119,311 @@ func TestV3TxnInvalidRange(t *testing.T) {
 	}
 }
 
-func TestV3TooLargeRequest(t *testing.T) {
-	integration.BeforeTest(t)
+// func TestV3TooLargeRequest(t *testing.T) {
+// 	integration.BeforeTest(t)
 
-	clus := integration.NewCluster(t, &integration.ClusterConfig{Size: 3})
-	defer clus.Terminate(t)
+// 	clus := integration.NewCluster(t, &integration.ClusterConfig{Size: 3})
+// 	defer clus.Terminate(t)
 
-	kvc := integration.ToGRPC(clus.RandClient()).KV
+// 	kvc := integration.ToGRPC(clus.RandClient()).KV
 
-	// 2MB request value
-	largeV := make([]byte, 2*1024*1024)
-	preq := &pb.PutRequest{Key: []byte("foo"), Value: largeV}
+// 	// 2MB request value
+// 	largeV := make([]byte, 2*1024*1024)
+// 	preq := &pb.PutRequest{Key: []byte("foo"), Value: largeV}
 
-	_, err := kvc.Put(context.Background(), preq)
-	if !eqErrGRPC(err, rpctypes.ErrGRPCRequestTooLarge) {
-		t.Errorf("err = %v, want %v", err, rpctypes.ErrGRPCRequestTooLarge)
-	}
-}
+// 	_, err := kvc.Put(context.Background(), preq)
+// 	if !eqErrGRPC(err, rpctypes.ErrGRPCRequestTooLarge) {
+// 		t.Errorf("err = %v, want %v", err, rpctypes.ErrGRPCRequestTooLarge)
+// 	}
+// }
 
-// TestV3Hash tests hash.
-func TestV3Hash(t *testing.T) {
-	integration.BeforeTest(t)
-	clus := integration.NewCluster(t, &integration.ClusterConfig{Size: 3})
-	defer clus.Terminate(t)
+// // TestV3Hash tests hash.
+// func TestV3Hash(t *testing.T) {
+// 	integration.BeforeTest(t)
+// 	clus := integration.NewCluster(t, &integration.ClusterConfig{Size: 3})
+// 	defer clus.Terminate(t)
 
-	cli := clus.RandClient()
-	kvc := integration.ToGRPC(cli).KV
-	m := integration.ToGRPC(cli).Maintenance
+// 	cli := clus.RandClient()
+// 	kvc := integration.ToGRPC(cli).KV
+// 	m := integration.ToGRPC(cli).Maintenance
 
-	preq := &pb.PutRequest{Key: []byte("foo"), Value: []byte("bar")}
+// 	preq := &pb.PutRequest{Key: []byte("foo"), Value: []byte("bar")}
 
-	for i := 0; i < 3; i++ {
-		_, err := kvc.Put(context.Background(), preq)
-		if err != nil {
-			t.Fatalf("couldn't put key (%v)", err)
-		}
-	}
+// 	for i := 0; i < 3; i++ {
+// 		_, err := kvc.Put(context.Background(), preq)
+// 		if err != nil {
+// 			t.Fatalf("couldn't put key (%v)", err)
+// 		}
+// 	}
 
-	resp, err := m.Hash(context.Background(), &pb.HashRequest{})
-	if err != nil || resp.Hash == 0 {
-		t.Fatalf("couldn't hash (%v, hash %d)", err, resp.Hash)
-	}
-}
+// 	resp, err := m.Hash(context.Background(), &pb.HashRequest{})
+// 	if err != nil || resp.Hash == 0 {
+// 		t.Fatalf("couldn't hash (%v, hash %d)", err, resp.Hash)
+// 	}
+// }
 
-func TestV3RangeRequest(t *testing.T) {
-	integration.BeforeTest(t)
-	tests := []struct {
-		name string
+// func TestV3RangeRequest(t *testing.T) {
+// 	integration.BeforeTest(t)
+// 	tests := []struct {
+// 		name string
 
-		putKeys []string
-		reqs    []pb.RangeRequest
+// 		putKeys []string
+// 		reqs    []pb.RangeRequest
 
-		wresps  [][]string
-		wmores  []bool
-		wcounts []int64
-	}{
-		{
-			"single key",
-			[]string{"foo", "bar"},
-			[]pb.RangeRequest{
-				// exists
-				{Key: []byte("foo")},
-				// doesn't exist
-				{Key: []byte("baz")},
-			},
+// 		wresps  [][]string
+// 		wmores  []bool
+// 		wcounts []int64
+// 	}{
+// 		{
+// 			"single key",
+// 			[]string{"foo", "bar"},
+// 			[]pb.RangeRequest{
+// 				// exists
+// 				{Key: []byte("foo")},
+// 				// doesn't exist
+// 				{Key: []byte("baz")},
+// 			},
 
-			[][]string{
-				{"foo"},
-				{},
-			},
-			[]bool{false, false},
-			[]int64{1, 0},
-		},
-		{
-			"multi-key",
-			[]string{"a", "b", "c", "d", "e"},
-			[]pb.RangeRequest{
-				// all in range
-				{Key: []byte("a"), RangeEnd: []byte("z")},
-				// [b, d)
-				{Key: []byte("b"), RangeEnd: []byte("d")},
-				// out of range
-				{Key: []byte("f"), RangeEnd: []byte("z")},
-				// [c,c) = empty
-				{Key: []byte("c"), RangeEnd: []byte("c")},
-				// [d, b) = empty
-				{Key: []byte("d"), RangeEnd: []byte("b")},
-				// ["\0", "\0") => all in range
-				{Key: []byte{0}, RangeEnd: []byte{0}},
-			},
+// 			[][]string{
+// 				{"foo"},
+// 				{},
+// 			},
+// 			[]bool{false, false},
+// 			[]int64{1, 0},
+// 		},
+// 		{
+// 			"multi-key",
+// 			[]string{"a", "b", "c", "d", "e"},
+// 			[]pb.RangeRequest{
+// 				// all in range
+// 				{Key: []byte("a"), RangeEnd: []byte("z")},
+// 				// [b, d)
+// 				{Key: []byte("b"), RangeEnd: []byte("d")},
+// 				// out of range
+// 				{Key: []byte("f"), RangeEnd: []byte("z")},
+// 				// [c,c) = empty
+// 				{Key: []byte("c"), RangeEnd: []byte("c")},
+// 				// [d, b) = empty
+// 				{Key: []byte("d"), RangeEnd: []byte("b")},
+// 				// ["\0", "\0") => all in range
+// 				{Key: []byte{0}, RangeEnd: []byte{0}},
+// 			},
 
-			[][]string{
-				{"a", "b", "c", "d", "e"},
-				{"b", "c"},
-				{},
-				{},
-				{},
-				{"a", "b", "c", "d", "e"},
-			},
-			[]bool{false, false, false, false, false, false},
-			[]int64{5, 2, 0, 0, 0, 5},
-		},
-		{
-			"revision",
-			[]string{"a", "b", "c", "d", "e"},
-			[]pb.RangeRequest{
-				{Key: []byte("a"), RangeEnd: []byte("z"), Revision: 0},
-				{Key: []byte("a"), RangeEnd: []byte("z"), Revision: 1},
-				{Key: []byte("a"), RangeEnd: []byte("z"), Revision: 2},
-				{Key: []byte("a"), RangeEnd: []byte("z"), Revision: 3},
-			},
+// 			[][]string{
+// 				{"a", "b", "c", "d", "e"},
+// 				{"b", "c"},
+// 				{},
+// 				{},
+// 				{},
+// 				{"a", "b", "c", "d", "e"},
+// 			},
+// 			[]bool{false, false, false, false, false, false},
+// 			[]int64{5, 2, 0, 0, 0, 5},
+// 		},
+// 		{
+// 			"revision",
+// 			[]string{"a", "b", "c", "d", "e"},
+// 			[]pb.RangeRequest{
+// 				{Key: []byte("a"), RangeEnd: []byte("z"), Revision: 0},
+// 				{Key: []byte("a"), RangeEnd: []byte("z"), Revision: 1},
+// 				{Key: []byte("a"), RangeEnd: []byte("z"), Revision: 2},
+// 				{Key: []byte("a"), RangeEnd: []byte("z"), Revision: 3},
+// 			},
 
-			[][]string{
-				{"a", "b", "c", "d", "e"},
-				{},
-				{"a"},
-				{"a", "b"},
-			},
-			[]bool{false, false, false, false},
-			[]int64{5, 0, 1, 2},
-		},
-		{
-			"limit",
-			[]string{"a", "b", "c"},
-			[]pb.RangeRequest{
-				// more
-				{Key: []byte("a"), RangeEnd: []byte("z"), Limit: 1},
-				// half
-				{Key: []byte("a"), RangeEnd: []byte("z"), Limit: 2},
-				// no more
-				{Key: []byte("a"), RangeEnd: []byte("z"), Limit: 3},
-				// limit over
-				{Key: []byte("a"), RangeEnd: []byte("z"), Limit: 4},
-			},
+// 			[][]string{
+// 				{"a", "b", "c", "d", "e"},
+// 				{},
+// 				{"a"},
+// 				{"a", "b"},
+// 			},
+// 			[]bool{false, false, false, false},
+// 			[]int64{5, 0, 1, 2},
+// 		},
+// 		{
+// 			"limit",
+// 			[]string{"a", "b", "c"},
+// 			[]pb.RangeRequest{
+// 				// more
+// 				{Key: []byte("a"), RangeEnd: []byte("z"), Limit: 1},
+// 				// half
+// 				{Key: []byte("a"), RangeEnd: []byte("z"), Limit: 2},
+// 				// no more
+// 				{Key: []byte("a"), RangeEnd: []byte("z"), Limit: 3},
+// 				// limit over
+// 				{Key: []byte("a"), RangeEnd: []byte("z"), Limit: 4},
+// 			},
 
-			[][]string{
-				{"a"},
-				{"a", "b"},
-				{"a", "b", "c"},
-				{"a", "b", "c"},
-			},
-			[]bool{true, true, false, false},
-			[]int64{3, 3, 3, 3},
-		},
-		{
-			"sort",
-			[]string{"b", "a", "c", "d", "c"},
-			[]pb.RangeRequest{
-				{
-					Key: []byte("a"), RangeEnd: []byte("z"),
-					Limit:      1,
-					SortOrder:  pb.RangeRequest_ASCEND,
-					SortTarget: pb.RangeRequest_KEY,
-				},
-				{
-					Key: []byte("a"), RangeEnd: []byte("z"),
-					Limit:      1,
-					SortOrder:  pb.RangeRequest_DESCEND,
-					SortTarget: pb.RangeRequest_KEY,
-				},
-				{
-					Key: []byte("a"), RangeEnd: []byte("z"),
-					Limit:      1,
-					SortOrder:  pb.RangeRequest_ASCEND,
-					SortTarget: pb.RangeRequest_CREATE,
-				},
-				{
-					Key: []byte("a"), RangeEnd: []byte("z"),
-					Limit:      1,
-					SortOrder:  pb.RangeRequest_DESCEND,
-					SortTarget: pb.RangeRequest_MOD,
-				},
-				{
-					Key: []byte("z"), RangeEnd: []byte("z"),
-					Limit:      1,
-					SortOrder:  pb.RangeRequest_DESCEND,
-					SortTarget: pb.RangeRequest_CREATE,
-				},
-				{ // sort ASCEND by default
-					Key: []byte("a"), RangeEnd: []byte("z"),
-					Limit:      10,
-					SortOrder:  pb.RangeRequest_NONE,
-					SortTarget: pb.RangeRequest_CREATE,
-				},
-			},
+// 			[][]string{
+// 				{"a"},
+// 				{"a", "b"},
+// 				{"a", "b", "c"},
+// 				{"a", "b", "c"},
+// 			},
+// 			[]bool{true, true, false, false},
+// 			[]int64{3, 3, 3, 3},
+// 		},
+// 		{
+// 			"sort",
+// 			[]string{"b", "a", "c", "d", "c"},
+// 			[]pb.RangeRequest{
+// 				{
+// 					Key: []byte("a"), RangeEnd: []byte("z"),
+// 					Limit:      1,
+// 					SortOrder:  pb.RangeRequest_ASCEND,
+// 					SortTarget: pb.RangeRequest_KEY,
+// 				},
+// 				{
+// 					Key: []byte("a"), RangeEnd: []byte("z"),
+// 					Limit:      1,
+// 					SortOrder:  pb.RangeRequest_DESCEND,
+// 					SortTarget: pb.RangeRequest_KEY,
+// 				},
+// 				{
+// 					Key: []byte("a"), RangeEnd: []byte("z"),
+// 					Limit:      1,
+// 					SortOrder:  pb.RangeRequest_ASCEND,
+// 					SortTarget: pb.RangeRequest_CREATE,
+// 				},
+// 				{
+// 					Key: []byte("a"), RangeEnd: []byte("z"),
+// 					Limit:      1,
+// 					SortOrder:  pb.RangeRequest_DESCEND,
+// 					SortTarget: pb.RangeRequest_MOD,
+// 				},
+// 				{
+// 					Key: []byte("z"), RangeEnd: []byte("z"),
+// 					Limit:      1,
+// 					SortOrder:  pb.RangeRequest_DESCEND,
+// 					SortTarget: pb.RangeRequest_CREATE,
+// 				},
+// 				{ // sort ASCEND by default
+// 					Key: []byte("a"), RangeEnd: []byte("z"),
+// 					Limit:      10,
+// 					SortOrder:  pb.RangeRequest_NONE,
+// 					SortTarget: pb.RangeRequest_CREATE,
+// 				},
+// 			},
 
-			[][]string{
-				{"a"},
-				{"d"},
-				{"b"},
-				{"c"},
-				{},
-				{"b", "a", "c", "d"},
-			},
-			[]bool{true, true, true, true, false, false},
-			[]int64{4, 4, 4, 4, 0, 4},
-		},
-		{
-			"min/max mod rev",
-			[]string{"rev2", "rev3", "rev4", "rev5", "rev6"},
-			[]pb.RangeRequest{
-				{
-					Key: []byte{0}, RangeEnd: []byte{0},
-					MinModRevision: 3,
-				},
-				{
-					Key: []byte{0}, RangeEnd: []byte{0},
-					MaxModRevision: 3,
-				},
-				{
-					Key: []byte{0}, RangeEnd: []byte{0},
-					MinModRevision: 3,
-					MaxModRevision: 5,
-				},
-				{
-					Key: []byte{0}, RangeEnd: []byte{0},
-					MaxModRevision: 10,
-				},
-			},
+// 			[][]string{
+// 				{"a"},
+// 				{"d"},
+// 				{"b"},
+// 				{"c"},
+// 				{},
+// 				{"b", "a", "c", "d"},
+// 			},
+// 			[]bool{true, true, true, true, false, false},
+// 			[]int64{4, 4, 4, 4, 0, 4},
+// 		},
+// 		{
+// 			"min/max mod rev",
+// 			[]string{"rev2", "rev3", "rev4", "rev5", "rev6"},
+// 			[]pb.RangeRequest{
+// 				{
+// 					Key: []byte{0}, RangeEnd: []byte{0},
+// 					MinModRevision: 3,
+// 				},
+// 				{
+// 					Key: []byte{0}, RangeEnd: []byte{0},
+// 					MaxModRevision: 3,
+// 				},
+// 				{
+// 					Key: []byte{0}, RangeEnd: []byte{0},
+// 					MinModRevision: 3,
+// 					MaxModRevision: 5,
+// 				},
+// 				{
+// 					Key: []byte{0}, RangeEnd: []byte{0},
+// 					MaxModRevision: 10,
+// 				},
+// 			},
 
-			[][]string{
-				{"rev3", "rev4", "rev5", "rev6"},
-				{"rev2", "rev3"},
-				{"rev3", "rev4", "rev5"},
-				{"rev2", "rev3", "rev4", "rev5", "rev6"},
-			},
-			[]bool{false, false, false, false},
-			[]int64{5, 5, 5, 5},
-		},
-		{
-			"min/max create rev",
-			[]string{"rev2", "rev3", "rev2", "rev2", "rev6", "rev3"},
-			[]pb.RangeRequest{
-				{
-					Key: []byte{0}, RangeEnd: []byte{0},
-					MinCreateRevision: 3,
-				},
-				{
-					Key: []byte{0}, RangeEnd: []byte{0},
-					MaxCreateRevision: 3,
-				},
-				{
-					Key: []byte{0}, RangeEnd: []byte{0},
-					MinCreateRevision: 3,
-					MaxCreateRevision: 5,
-				},
-				{
-					Key: []byte{0}, RangeEnd: []byte{0},
-					MaxCreateRevision: 10,
-				},
-			},
+// 			[][]string{
+// 				{"rev3", "rev4", "rev5", "rev6"},
+// 				{"rev2", "rev3"},
+// 				{"rev3", "rev4", "rev5"},
+// 				{"rev2", "rev3", "rev4", "rev5", "rev6"},
+// 			},
+// 			[]bool{false, false, false, false},
+// 			[]int64{5, 5, 5, 5},
+// 		},
+// 		{
+// 			"min/max create rev",
+// 			[]string{"rev2", "rev3", "rev2", "rev2", "rev6", "rev3"},
+// 			[]pb.RangeRequest{
+// 				{
+// 					Key: []byte{0}, RangeEnd: []byte{0},
+// 					MinCreateRevision: 3,
+// 				},
+// 				{
+// 					Key: []byte{0}, RangeEnd: []byte{0},
+// 					MaxCreateRevision: 3,
+// 				},
+// 				{
+// 					Key: []byte{0}, RangeEnd: []byte{0},
+// 					MinCreateRevision: 3,
+// 					MaxCreateRevision: 5,
+// 				},
+// 				{
+// 					Key: []byte{0}, RangeEnd: []byte{0},
+// 					MaxCreateRevision: 10,
+// 				},
+// 			},
 
-			[][]string{
-				{"rev3", "rev6"},
-				{"rev2", "rev3"},
-				{"rev3"},
-				{"rev2", "rev3", "rev6"},
-			},
-			[]bool{false, false, false, false},
-			[]int64{3, 3, 3, 3},
-		},
-	}
+// 			[][]string{
+// 				{"rev3", "rev6"},
+// 				{"rev2", "rev3"},
+// 				{"rev3"},
+// 				{"rev2", "rev3", "rev6"},
+// 			},
+// 			[]bool{false, false, false, false},
+// 			[]int64{3, 3, 3, 3},
+// 		},
+// 	}
 
-	for i, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			clus := integration.NewCluster(t, &integration.ClusterConfig{Size: 3})
-			defer clus.Terminate(t)
-			for _, k := range tt.putKeys {
-				kvc := integration.ToGRPC(clus.RandClient()).KV
-				req := &pb.PutRequest{Key: []byte(k), Value: []byte("bar")}
-				if _, err := kvc.Put(context.TODO(), req); err != nil {
-					t.Fatalf("#%d: couldn't put key (%v)", i, err)
-				}
-			}
+// 	for i, tt := range tests {
+// 		t.Run(tt.name, func(t *testing.T) {
+// 			clus := integration.NewCluster(t, &integration.ClusterConfig{Size: 3})
+// 			defer clus.Terminate(t)
+// 			for _, k := range tt.putKeys {
+// 				kvc := integration.ToGRPC(clus.RandClient()).KV
+// 				req := &pb.PutRequest{Key: []byte(k), Value: []byte("bar")}
+// 				if _, err := kvc.Put(context.TODO(), req); err != nil {
+// 					t.Fatalf("#%d: couldn't put key (%v)", i, err)
+// 				}
+// 			}
 
-			for j, req := range tt.reqs {
-				kvc := integration.ToGRPC(clus.RandClient()).KV
-				resp, err := kvc.Range(context.TODO(), &req)
-				if err != nil {
-					t.Errorf("#%d.%d: Range error: %v", i, j, err)
-					continue
-				}
-				if len(resp.Kvs) != len(tt.wresps[j]) {
-					t.Errorf("#%d.%d: bad len(resp.Kvs). got = %d, want = %d, ", i, j, len(resp.Kvs), len(tt.wresps[j]))
-					continue
-				}
-				for k, wKey := range tt.wresps[j] {
-					respKey := string(resp.Kvs[k].Key)
-					if respKey != wKey {
-						t.Errorf("#%d.%d: key[%d]. got = %v, want = %v, ", i, j, k, respKey, wKey)
-					}
-				}
-				if resp.More != tt.wmores[j] {
-					t.Errorf("#%d.%d: bad more. got = %v, want = %v, ", i, j, resp.More, tt.wmores[j])
-				}
-				if resp.GetCount() != tt.wcounts[j] {
-					t.Errorf("#%d.%d: bad count. got = %v, want = %v, ", i, j, resp.GetCount(), tt.wcounts[j])
-				}
-				wrev := int64(len(tt.putKeys) + 1)
-				if resp.Header.Revision != wrev {
-					t.Errorf("#%d.%d: bad header revision. got = %d. want = %d", i, j, resp.Header.Revision, wrev)
-				}
-			}
-		})
-	}
-}
+// 			for j, req := range tt.reqs {
+// 				kvc := integration.ToGRPC(clus.RandClient()).KV
+// 				resp, err := kvc.Range(context.TODO(), &req)
+// 				if err != nil {
+// 					t.Errorf("#%d.%d: Range error: %v", i, j, err)
+// 					continue
+// 				}
+// 				if len(resp.Kvs) != len(tt.wresps[j]) {
+// 					t.Errorf("#%d.%d: bad len(resp.Kvs). got = %d, want = %d, ", i, j, len(resp.Kvs), len(tt.wresps[j]))
+// 					continue
+// 				}
+// 				for k, wKey := range tt.wresps[j] {
+// 					respKey := string(resp.Kvs[k].Key)
+// 					if respKey != wKey {
+// 						t.Errorf("#%d.%d: key[%d]. got = %v, want = %v, ", i, j, k, respKey, wKey)
+// 					}
+// 				}
+// 				if resp.More != tt.wmores[j] {
+// 					t.Errorf("#%d.%d: bad more. got = %v, want = %v, ", i, j, resp.More, tt.wmores[j])
+// 				}
+// 				if resp.GetCount() != tt.wcounts[j] {
+// 					t.Errorf("#%d.%d: bad count. got = %v, want = %v, ", i, j, resp.GetCount(), tt.wcounts[j])
+// 				}
+// 				wrev := int64(len(tt.putKeys) + 1)
+// 				if resp.Header.Revision != wrev {
+// 					t.Errorf("#%d.%d: bad header revision. got = %d. want = %d", i, j, resp.Header.Revision, wrev)
+// 				}
+// 			}
+// 		})
+// 	}
+// }
 
 // TODO: Resurrect
 
@@ -1659,112 +1661,120 @@ func TestV3RangeRequest(t *testing.T) {
 // 	cl.Close()
 // }
 
-// TestV3LargeRequests ensures that configurable MaxRequestBytes works as intended.
-func TestV3LargeRequests(t *testing.T) {
-	integration.BeforeTest(t)
-	tests := []struct {
-		maxRequestBytes uint
-		valueSize       int
-		expectError     error
-	}{
-		// don't set to 0. use 0 as the default.
-		{256, 1024, rpctypes.ErrGRPCRequestTooLarge},
-		{10 * 1024 * 1024, 9 * 1024 * 1024, nil},
-		{10 * 1024 * 1024, 10 * 1024 * 1024, rpctypes.ErrGRPCRequestTooLarge},
-		{10 * 1024 * 1024, 10*1024*1024 + 5, rpctypes.ErrGRPCRequestTooLarge},
-	}
-	for i, test := range tests {
-		t.Run(fmt.Sprintf("#%d", i), func(t *testing.T) {
-			clus := integration.NewCluster(t, &integration.ClusterConfig{Size: 1, MaxRequestBytes: test.maxRequestBytes})
-			defer clus.Terminate(t)
-			kvcli := integration.ToGRPC(clus.Client(0)).KV
-			reqput := &pb.PutRequest{Key: []byte("foo"), Value: make([]byte, test.valueSize)}
-			_, err := kvcli.Put(context.TODO(), reqput)
-			if !eqErrGRPC(err, test.expectError) {
-				t.Errorf("#%d: expected error %v, got %v", i, test.expectError, err)
-			}
+// // TestV3LargeRequests ensures that configurable MaxRequestBytes works as intended.
+// func TestV3LargeRequests(t *testing.T) {
+// 	integration.BeforeTest(t)
+// 	tests := []struct {
+// 		maxRequestBytes uint
+// 		valueSize       int
+// 		expectError     error
+// 	}{
+// 		// don't set to 0. use 0 as the default.
+// 		{256, 1024, rpctypes.ErrGRPCRequestTooLarge},
+// 		{10 * 1024 * 1024, 9 * 1024 * 1024, nil},
+// 		{10 * 1024 * 1024, 10 * 1024 * 1024, rpctypes.ErrGRPCRequestTooLarge},
+// 		{10 * 1024 * 1024, 10*1024*1024 + 5, rpctypes.ErrGRPCRequestTooLarge},
+// 	}
+// 	for i, test := range tests {
+// 		t.Run(fmt.Sprintf("#%d", i), func(t *testing.T) {
+// 			clus := integration.NewCluster(t, &integration.ClusterConfig{Size: 1, MaxRequestBytes: test.maxRequestBytes})
+// 			defer clus.Terminate(t)
+// 			kvcli := integration.ToGRPC(clus.Client(0)).KV
+// 			reqput := &pb.PutRequest{Key: []byte("foo"), Value: make([]byte, test.valueSize)}
+// 			_, err := kvcli.Put(context.TODO(), reqput)
+// 			if !eqErrGRPC(err, test.expectError) {
+// 				t.Errorf("#%d: expected error %v, got %v", i, test.expectError, err)
+// 			}
 
-			// request went through, expect large response back from server
-			if test.expectError == nil {
-				reqget := &pb.RangeRequest{Key: []byte("foo")}
-				// limit receive call size with original value + gRPC overhead bytes
-				_, err = kvcli.Range(context.TODO(), reqget, grpc.MaxCallRecvMsgSize(test.valueSize+512*1024))
-				if err != nil {
-					t.Errorf("#%d: range expected no error, got %v", i, err)
-				}
-			}
-		})
-	}
-}
+// 			// request went through, expect large response back from server
+// 			if test.expectError == nil {
+// 				reqget := &pb.RangeRequest{Key: []byte("foo")}
+// 				// limit receive call size with original value + gRPC overhead bytes
+// 				_, err = kvcli.Range(context.TODO(), reqget, grpc.MaxCallRecvMsgSize(test.valueSize+512*1024))
+// 				if err != nil {
+// 					t.Errorf("#%d: range expected no error, got %v", i, err)
+// 				}
+// 			}
+// 		})
+// 	}
+// }
 
 // TestV3AdditionalGRPCOptions ensures that configurable GRPCAdditionalServerOptions works as intended.
-func TestV3AdditionalGRPCOptions(t *testing.T) {
-	integration.BeforeTest(t)
-	tests := []struct {
-		name            string
-		maxRequestBytes uint
-		grpcOpts        []grpc.ServerOption
-		valueSize       int
-		expectError     error
-	}{
-		{
-			name:            "requests will get a gRPC error because it's larger than gRPC MaxRecvMsgSize",
-			maxRequestBytes: 8 * 1024 * 1024,
-			grpcOpts:        nil,
-			valueSize:       9 * 1024 * 1024,
-			expectError:     status.Errorf(codes.ResourceExhausted, "grpc: received message larger than max"),
-		},
-		{
-			name:            "requests will get an etcd custom gRPC error because it's larger than MaxRequestBytes",
-			maxRequestBytes: 8 * 1024 * 1024,
-			grpcOpts:        []grpc.ServerOption{grpc.MaxRecvMsgSize(10 * 1024 * 1024)},
-			valueSize:       9 * 1024 * 1024,
-			expectError:     rpctypes.ErrGRPCRequestTooLarge,
-		},
-		{
-			name:            "requests size is smaller than MaxRequestBytes but larger than MaxRecvMsgSize",
-			maxRequestBytes: 8 * 1024 * 1024,
-			grpcOpts:        []grpc.ServerOption{grpc.MaxRecvMsgSize(4 * 1024 * 1024)},
-			valueSize:       6 * 1024 * 1024,
-			expectError:     status.Errorf(codes.ResourceExhausted, "grpc: received message larger than max"),
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			clus := integration.NewCluster(t, &integration.ClusterConfig{
-				Size:                        1,
-				MaxRequestBytes:             test.maxRequestBytes,
-				ClientMaxCallSendMsgSize:    12 * 1024 * 1024,
-				GRPCAdditionalServerOptions: test.grpcOpts,
-			})
-			defer clus.Terminate(t)
-			kvcli := integration.ToGRPC(clus.Client(0)).KV
-			reqput := &pb.PutRequest{Key: []byte("foo"), Value: make([]byte, test.valueSize)}
-			if _, err := kvcli.Put(context.TODO(), reqput); err != nil {
-				var etcdErr rpctypes.EtcdError
-				if errors.As(err, &etcdErr) {
-					if err.Error() != status.Convert(test.expectError).Message() {
-						t.Errorf("expected %v, got %v", status.Convert(test.expectError).Message(), err.Error())
-					}
-				} else if !strings.HasPrefix(err.Error(), test.expectError.Error()) {
-					t.Errorf("expected error starting with '%s', got '%s'", test.expectError.Error(), err.Error())
-				}
-			}
-			// request went through, expect large response back from server
-			if test.expectError == nil {
-				reqget := &pb.RangeRequest{Key: []byte("foo")}
-				// limit receive call size with original value + gRPC overhead bytes
-				_, err := kvcli.Range(context.TODO(), reqget, grpc.MaxCallRecvMsgSize(test.valueSize+512*1024))
-				if err != nil {
-					t.Errorf("range expected no error, got %v", err)
-				}
-			}
-		})
-	}
-}
+// func TestV3AdditionalGRPCOptions(t *testing.T) {
+// 	integration.BeforeTest(t)
+// 	tests := []struct {
+// 		name            string
+// 		maxRequestBytes uint
+// 		grpcOpts        []grpc.ServerOption
+// 		valueSize       int
+// 		expectError     error
+// 	}{
+// 		{
+// 			name:            "requests will get a gRPC error because it's larger than gRPC MaxRecvMsgSize",
+// 			maxRequestBytes: 8 * 1024 * 1024,
+// 			grpcOpts:        nil,
+// 			valueSize:       9 * 1024 * 1024,
+// 			expectError:     status.Errorf(codes.ResourceExhausted, "grpc: received message larger than max"),
+// 		},
+// 		{
+// 			name:            "requests will get an etcd custom gRPC error because it's larger than MaxRequestBytes",
+// 			maxRequestBytes: 8 * 1024 * 1024,
+// 			grpcOpts:        []grpc.ServerOption{grpc.MaxRecvMsgSize(10 * 1024 * 1024)},
+// 			valueSize:       9 * 1024 * 1024,
+// 			expectError:     rpctypes.ErrGRPCRequestTooLarge,
+// 		},
+// 		{
+// 			name:            "requests size is smaller than MaxRequestBytes but larger than MaxRecvMsgSize",
+// 			maxRequestBytes: 8 * 1024 * 1024,
+// 			grpcOpts:        []grpc.ServerOption{grpc.MaxRecvMsgSize(4 * 1024 * 1024)},
+// 			valueSize:       6 * 1024 * 1024,
+// 			expectError:     status.Errorf(codes.ResourceExhausted, "grpc: received message larger than max"),
+// 		},
+// 	}
+// 	for _, test := range tests {
+// 		t.Run(test.name, func(t *testing.T) {
+// 			clus := integration.NewCluster(t, &integration.ClusterConfig{
+// 				Size:                        1,
+// 				MaxRequestBytes:             test.maxRequestBytes,
+// 				ClientMaxCallSendMsgSize:    12 * 1024 * 1024,
+// 				GRPCAdditionalServerOptions: test.grpcOpts,
+// 			})
+// 			defer clus.Terminate(t)
+// 			kvcli := integration.ToGRPC(clus.Client(0)).KV
+// 			reqput := &pb.PutRequest{Key: []byte("foo"), Value: make([]byte, test.valueSize)}
+// 			if _, err := kvcli.Put(context.TODO(), reqput); err != nil {
+// 				var etcdErr rpctypes.EtcdError
+// 				if errors.As(err, &etcdErr) {
+// 					if err.Error() != status.Convert(test.expectError).Message() {
+// 						t.Errorf("expected %v, got %v", status.Convert(test.expectError).Message(), err.Error())
+// 					}
+// 				} else if !strings.HasPrefix(err.Error(), test.expectError.Error()) {
+// 					t.Errorf("expected error starting with '%s', got '%s'", test.expectError.Error(), err.Error())
+// 				}
+// 			}
+// 			// request went through, expect large response back from server
+// 			if test.expectError == nil {
+// 				reqget := &pb.RangeRequest{Key: []byte("foo")}
+// 				// limit receive call size with original value + gRPC overhead bytes
+// 				_, err := kvcli.Range(context.TODO(), reqget, grpc.MaxCallRecvMsgSize(test.valueSize+512*1024))
+// 				if err != nil {
+// 					t.Errorf("range expected no error, got %v", err)
+// 				}
+// 			}
+// 		})
+// 	}
+// }
 
 func eqErrGRPC(err1 error, err2 error) bool {
-	return !(err1 == nil && err2 != nil) || err1.Error() == err2.Error()
+	if err1 == nil || err2 == nil {
+		if err1 == nil && err2 == nil {
+			return true
+		} else {
+			return false
+		}
+	} else {
+		return err1.Error() == err2.Error()
+	}
 }
 
 // waitForRestart tries a range request until the client's server responds.

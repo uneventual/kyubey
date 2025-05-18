@@ -217,6 +217,11 @@ func (e *Election) observe(ctx context.Context, ch chan<- v3.GetResponse) {
 		}
 
 		cctx, cancel := context.WithCancel(ctx)
+		fmt.Printf("cctx: %v\n", cctx)
+		fmt.Printf("kv: %v\n", kv)
+		fmt.Printf("kv.Key: %v\n", kv.Key)
+		fmt.Printf("hdr: %v\n", hdr)
+		fmt.Printf("hdr.Revision: %v\n", hdr.Revision)
 		wch := client.Watch(cctx, string(kv.Key), v3.WithRev(hdr.Revision+1))
 		keyDeleted := false
 		for !keyDeleted {
