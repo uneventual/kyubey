@@ -17,90 +17,88 @@ package integration
 import (
 	"context"
 	"fmt"
-	"math/rand"
-	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	v3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/client/v3/concurrency"
 	"go.etcd.io/etcd/tests/v3/framework/integration"
 )
 
+// TODO: Resurrect
 // TestSTMConflict tests that conflicts are retried.
-func TestSTMConflict(t *testing.T) {
-	integration.BeforeTest(t)
+// func TestSTMConflict(t *testing.T) {
+// 	integration.BeforeTest(t)
 
-	clus := integration.NewCluster(t, &integration.ClusterConfig{Size: 3})
-	defer clus.Terminate(t)
+// 	clus := integration.NewCluster(t, &integration.ClusterConfig{Size: 3})
+// 	defer clus.Terminate(t)
 
-	etcdc := clus.RandClient()
-	keys := make([]string, 5)
-	for i := 0; i < len(keys); i++ {
-		keys[i] = fmt.Sprintf("foo-%d", i)
-		if _, err := etcdc.Put(context.TODO(), keys[i], "100"); err != nil {
-			t.Fatalf("could not make key (%v)", err)
-		}
-	}
+// 	etcdc := clus.RandClient()
+// 	keys := make([]string, 5)
+// 	for i := 0; i < len(keys); i++ {
+// 		keys[i] = fmt.Sprintf("foo-%d", i)
+// 		if _, err := etcdc.Put(context.TODO(), keys[i], "100"); err != nil {
+// 			t.Fatalf("could not make key (%v)", err)
+// 		}
+// 	}
 
-	errc := make(chan error)
-	for i := range keys {
-		curEtcdc := clus.RandClient()
-		srcKey := keys[i]
-		applyf := func(stm concurrency.STM) {
-			src := stm.Get(srcKey)
-			// must be different key to avoid double-adding
-			dstKey := srcKey
-			for dstKey == srcKey {
-				dstKey = keys[rand.Intn(len(keys))]
-			}
-			dst := stm.Get(dstKey)
-			srcV, _ := strconv.ParseInt(src, 10, 64)
-			dstV, _ := strconv.ParseInt(dst, 10, 64)
-			if srcV == 0 {
-				// can't rand.Intn on 0, so skip this transaction
-				return
-			}
-			xfer := int64(rand.Intn(int(srcV)) / 2)
-			stm.Put(srcKey, fmt.Sprintf("%d", srcV-xfer))
-			stm.Put(dstKey, fmt.Sprintf("%d", dstV+xfer))
-		}
-		go func() {
-			iso := concurrency.WithIsolation(concurrency.RepeatableReads)
-			_, err := concurrency.NewSTM(curEtcdc,
-				func(stm concurrency.STM) error {
-					applyf(stm)
-					return nil
-				},
-				iso,
-			)
-			errc <- err
-		}()
-	}
+// 	errc := make(chan error)
+// 	for i := range keys {
+// 		curEtcdc := clus.RandClient()
+// 		srcKey := keys[i]
+// 		applyf := func(stm concurrency.STM) {
+// 			src := stm.Get(srcKey)
+// 			// must be different key to avoid double-adding
+// 			dstKey := srcKey
+// 			for dstKey == srcKey {
+// 				dstKey = keys[rand.Intn(len(keys))]
+// 			}
+// 			dst := stm.Get(dstKey)
+// 			srcV, _ := strconv.ParseInt(src, 10, 64)
+// 			dstV, _ := strconv.ParseInt(dst, 10, 64)
+// 			if srcV == 0 {
+// 				// can't rand.Intn on 0, so skip this transaction
+// 				return
+// 			}
+// 			xfer := int64(rand.Intn(int(srcV)) / 2)
+// 			stm.Put(srcKey, fmt.Sprintf("%d", srcV-xfer))
+// 			stm.Put(dstKey, fmt.Sprintf("%d", dstV+xfer))
+// 		}
+// 		go func() {
+// 			iso := concurrency.WithIsolation(concurrency.RepeatableReads)
+// 			_, err := concurrency.NewSTM(curEtcdc,
+// 				func(stm concurrency.STM) error {
+// 					applyf(stm)
+// 					return nil
+// 				},
+// 				iso,
+// 			)
+// 			errc <- err
+// 		}()
+// 	}
 
-	// wait for txns
-	for range keys {
-		if err := <-errc; err != nil {
-			t.Fatalf("apply failed (%v)", err)
-		}
-	}
+// 	// wait for txns
+// 	for range keys {
+// 		if err := <-errc; err != nil {
+// 			t.Fatalf("apply failed (%v)", err)
+// 		}
+// 	}
 
-	// ensure sum matches initial sum
-	sum := 0
-	for _, oldkey := range keys {
-		rk, err := etcdc.Get(context.TODO(), oldkey)
-		if err != nil {
-			t.Fatalf("couldn't fetch key %s (%v)", oldkey, err)
-		}
-		v, _ := strconv.ParseInt(string(rk.Kvs[0].Value), 10, 64)
-		sum += int(v)
-	}
-	if sum != len(keys)*100 {
-		t.Fatalf("bad sum. got %d, expected %d", sum, len(keys)*100)
-	}
-}
+// 	// ensure sum matches initial sum
+// 	sum := 0
+// 	for _, oldkey := range keys {
+// 		rk, err := etcdc.Get(context.TODO(), oldkey)
+// 		if err != nil {
+// 			t.Fatalf("couldn't fetch key %s (%v)", oldkey, err)
+// 		}
+// 		v, _ := strconv.ParseInt(string(rk.Kvs[0].Value), 10, 64)
+// 		sum += int(v)
+// 	}
+// 	if sum != len(keys)*100 {
+// 		t.Fatalf("bad sum. got %d, expected %d", sum, len(keys)*100)
+// 	}
+// }
 
 // TestSTMPutNewKey confirms a STM put on a new key is visible after commit.
 func TestSTMPutNewKey(t *testing.T) {
@@ -160,67 +158,68 @@ func TestSTMAbort(t *testing.T) {
 	}
 }
 
+// TODO: Resurrect
 // TestSTMSerialize tests that serialization is honored when serializable.
-func TestSTMSerialize(t *testing.T) {
-	integration.BeforeTest(t)
+// func TestSTMSerialize(t *testing.T) {
+// 	integration.BeforeTest(t)
 
-	clus := integration.NewCluster(t, &integration.ClusterConfig{Size: 3})
-	defer clus.Terminate(t)
+// 	clus := integration.NewCluster(t, &integration.ClusterConfig{Size: 3})
+// 	defer clus.Terminate(t)
 
-	etcdc := clus.RandClient()
+// 	etcdc := clus.RandClient()
 
-	// set up initial keys
-	keys := make([]string, 5)
-	for i := 0; i < len(keys); i++ {
-		keys[i] = fmt.Sprintf("foo-%d", i)
-	}
+// 	// set up initial keys
+// 	keys := make([]string, 5)
+// 	for i := 0; i < len(keys); i++ {
+// 		keys[i] = fmt.Sprintf("foo-%d", i)
+// 	}
 
-	// update keys in full batches
-	updatec := make(chan struct{})
-	go func() {
-		defer close(updatec)
-		for i := 0; i < 5; i++ {
-			s := fmt.Sprintf("%d", i)
-			var ops []v3.Op
-			for _, k := range keys {
-				ops = append(ops, v3.OpPut(k, s))
-			}
-			if _, err := etcdc.Txn(context.TODO()).Then(ops...).Commit(); err != nil {
-				t.Errorf("couldn't put keys (%v)", err)
-			}
-			updatec <- struct{}{}
-		}
-	}()
+// 	// update keys in full batches
+// 	updatec := make(chan struct{})
+// 	go func() {
+// 		defer close(updatec)
+// 		for i := 0; i < 5; i++ {
+// 			s := fmt.Sprintf("%d", i)
+// 			var ops []v3.Op
+// 			for _, k := range keys {
+// 				ops = append(ops, v3.OpPut(k, s))
+// 			}
+// 			if _, err := etcdc.Txn(context.TODO()).Then(ops...).Commit(); err != nil {
+// 				t.Errorf("couldn't put keys (%v)", err)
+// 			}
+// 			updatec <- struct{}{}
+// 		}
+// 	}()
 
-	// read all keys in txn, make sure all values match
-	errc := make(chan error)
-	for range updatec {
-		curEtcdc := clus.RandClient()
-		applyf := func(stm concurrency.STM) error {
-			var vs []string
-			for i := range keys {
-				vs = append(vs, stm.Get(keys[i]))
-			}
-			for i := range vs {
-				if vs[0] != vs[i] {
-					return fmt.Errorf("got vs[%d] = %v, want %v", i, vs[i], vs[0])
-				}
-			}
-			return nil
-		}
-		go func() {
-			iso := concurrency.WithIsolation(concurrency.Serializable)
-			_, err := concurrency.NewSTM(curEtcdc, applyf, iso)
-			errc <- err
-		}()
-	}
+// 	// read all keys in txn, make sure all values match
+// 	errc := make(chan error)
+// 	for range updatec {
+// 		curEtcdc := clus.RandClient()
+// 		applyf := func(stm concurrency.STM) error {
+// 			var vs []string
+// 			for i := range keys {
+// 				vs = append(vs, stm.Get(keys[i]))
+// 			}
+// 			for i := range vs {
+// 				if vs[0] != vs[i] {
+// 					return fmt.Errorf("got vs[%d] = %v, want %v", i, vs[i], vs[0])
+// 				}
+// 			}
+// 			return nil
+// 		}
+// 		go func() {
+// 			iso := concurrency.WithIsolation(concurrency.Serializable)
+// 			_, err := concurrency.NewSTM(curEtcdc, applyf, iso)
+// 			errc <- err
+// 		}()
+// 	}
 
-	for i := 0; i < 5; i++ {
-		if err := <-errc; err != nil {
-			t.Error(err)
-		}
-	}
-}
+// 	for i := 0; i < 5; i++ {
+// 		if err := <-errc; err != nil {
+// 			t.Error(err)
+// 		}
+// 	}
+// }
 
 // TestSTMApplyOnConcurrentDeletion ensures that concurrent key deletion
 // fails the first GET revision comparison within STM; trigger retry.

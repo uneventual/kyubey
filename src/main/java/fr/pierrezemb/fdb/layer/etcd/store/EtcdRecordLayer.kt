@@ -133,7 +133,9 @@ constructor(clusterFilePath: String)     // delegates to super‑ctor
        }
 
 
-       EtcdIoRpcProto.RangeResponse.newBuilder().addAllKvs(kvs).setCount(kvs.size.toLong()).build()
+       EtcdIoRpcProto.RangeResponse.newBuilder()
+         .setHeader(EtcdIoRpcProto.ResponseHeader.newBuilder().setRevision(context.readVersion).build())
+         .addAllKvs(kvs).setCount(kvs.size.toLong()).build()
      }
   }
 

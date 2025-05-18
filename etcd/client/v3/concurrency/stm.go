@@ -16,6 +16,7 @@ package concurrency
 
 import (
 	"context"
+	"fmt"
 	"math"
 
 	v3 "go.etcd.io/etcd/client/v3"
@@ -318,6 +319,8 @@ func (s *stmSerializable) Get(keys ...string) string {
 		}
 	}
 	resp := s.stm.fetch(keys...)
+
+	fmt.Println("RESP HERE", resp)
 	if firstRead {
 		// txn's base revision is defined by the first read
 		s.getOpts = []v3.OpOption{

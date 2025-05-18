@@ -454,7 +454,7 @@ func testV3WatchCancel(t *testing.T, startRev int64) {
 
 	wresp, errR := wStream.Recv()
 	if errR != nil {
-		t.Errorf("wStream.Recv error: %v", errR)
+		t.Fatalf("wStream.Recv error: %v", errR)
 	}
 	if !wresp.Created {
 		t.Errorf("wresp.Created got = %v, want = true", wresp.Created)
@@ -882,7 +882,7 @@ func TestV3WatchMultipleEventsPutUnsynced(t *testing.T) {
 	for len(events) < 4 {
 		resp, err := wStream.Recv()
 		if err != nil {
-			t.Errorf("wStream.Recv error: %v", err)
+			t.Fatalf("wStream.Recv error: %v", err)
 		}
 		if resp.Created {
 			continue

@@ -108,6 +108,7 @@ public class WatchService extends WatchGrpc.WatchImplBase {
               .onNext(EtcdIoRpcProto.WatchResponse.newBuilder()
                 .setHeader(EtcdIoRpcProto.ResponseHeader.newBuilder().build())
                 .addEvents(event)
+                .setCreated(true)
                 .setWatchId(createRequest.getWatchId())
                 .build());
           } catch (StatusRuntimeException e) {
