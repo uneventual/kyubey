@@ -56,7 +56,15 @@ public class KVService extends VertxKVGrpc.KVVertxImplBase {
       kvs.sort(createComparatorFromRequest(request));
     }
 
-    return Future.succeededFuture(EtcdIoRpcProto.RangeResponse.newBuilder().addAllKvs(kvs).setCount(kvs.size()).build());
+    // ugly hack !!!
+    long revision = 0;
+
+    if (kvs.size() > 0) {
+      revision = kvs.get(0).getModRevision();
+    }
+    return Future.succeededFuture(EtcdIoRpcProto.RangeResponse.newBuilder()
+    .setHeader(EtcdIoRpcProto.ResponseHeader.newBuilder().setRevision(revision).build())
+    .addAllKvs(kvs).setCount(kvs.size()).build());
   }
 
 
@@ -99,12 +107,17 @@ public class KVService extends VertxKVGrpc.KVVertxImplBase {
       request.getKey().toByteArray(),
       request.getRangeEnd().isEmpty() ? request.getKey().toByteArray() : request.getRangeEnd().toByteArray());
 
-    return Future.succeededFuture(EtcdIoRpcProto.DeleteRangeResponse.newBuilder().setDeleted(count.longValue()).build());
+    return Future.succeededFuture(EtcdIoRpcProto.DeleteRangeResponse.newBuilder().setDeleted(count.longValue())
+    // todo: FIX
+    .setHeader(EtcdIoRpcProto.ResponseHeader.newBuilder().setRevision(0).build())
+    .build());
   }
 
   @Override
   public Future<EtcdIoRpcProto.TxnResponse> txn(EtcdIoRpcProto.TxnRequest request) {
     String tenantId = GrpcContextKeys.TENANT_ID_KEY.get();
+
+
     return Future.succeededFuture(this.recordLayer.txn(tenantId, request));
   }
 

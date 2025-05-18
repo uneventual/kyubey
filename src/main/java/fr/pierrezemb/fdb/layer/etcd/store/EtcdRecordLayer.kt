@@ -185,7 +185,9 @@ constructor(clusterFilePath: String)     // delegates to super‑ctor
       i, r -> build.addResponses(r)
     }
 
-    return build.build()
+    return build.setHeader(
+      ResponseHeader.newBuilder().setRevision(context.readVersion).build()
+    ).build()
 
 
   }
