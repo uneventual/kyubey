@@ -16,9 +16,10 @@ package integration
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"net"
 	"os"
 	"sync"
@@ -261,7 +262,7 @@ func (m *Member) GRPCPortNumber() string {
 }
 
 // NewClientV3 creates a new grpc client connection to the member
-func NewClientV3(m *Member) (*clientv3.Client, error) {
+func NewClientV3(m *Member, token string) (*clientv3.Client, error) {
 	if m.GRPCURL == "" {
 		return nil, fmt.Errorf("member not configured for grpc")
 	}
@@ -273,6 +274,7 @@ func NewClientV3(m *Member) (*clientv3.Client, error) {
 		MaxCallSendMsgSize: m.ClientMaxCallSendMsgSize,
 		MaxCallRecvMsgSize: m.ClientMaxCallRecvMsgSize,
 		Logger:             m.Logger.Named("client"),
+		Token:              token,
 	}
 
 	// if m.ClientTLSInfo != nil {
@@ -372,6 +374,15 @@ func NewCluster(t testutil.TB, cfg *ClusterConfig) *Cluster {
 
 	data, err := os.ReadFile(memberFile)
 
+	token := make([]byte, 8)
+
+	n, err := rand.Read(token)
+	if err != nil || n != len(token) {
+		t.Fatalf("failed to generate token: %v", err)
+	}
+
+	tokenString := base64.StdEncoding.EncodeToString(token)
+
 	if err == nil {
 		if members, err := MembersFromJSON(data); err == nil {
 			if len(members) < cfg.Size {
@@ -383,7 +394,7 @@ func NewCluster(t testutil.TB, cfg *ClusterConfig) *Cluster {
 				m.GRPCServerRecorder = &grpctesting.GRPCRecorder{}
 				m.Logger, _ = memberLogger(t, m.Name)
 
-				cli, err := NewClientV3(m)
+				cli, err := NewClientV3(m, tokenString)
 				if err != nil {
 					panic("failed to build client")
 				}

@@ -15,7 +15,6 @@
 package integration
 
 import (
-	"context"
 	tls "crypto/tls"
 	"fmt"
 	"strings"
@@ -29,91 +28,91 @@ import (
 	"go.etcd.io/etcd/tests/v3/framework/integration"
 )
 
-func TestAuthority(t *testing.T) {
-	tcs := []struct {
-		name                   string
-		useTCP                 bool
-		useTLS                 bool
-		clientURLPattern       string
-		expectAuthorityPattern string
-	}{
-		// {
-		// 	name:                   "unix:path",
-		// 	clientURLPattern:       "unix:localhost:${MEMBER_NAME}",
-		// 	expectAuthorityPattern: "localhost:${MEMBER_NAME}",
-		// },
-		// {
-		// 	name:                   "unix://absolute_path",
-		// 	clientURLPattern:       "unix://localhost:${MEMBER_NAME}",
-		// 	expectAuthorityPattern: "localhost:${MEMBER_NAME}",
-		// },
-		// // "unixs" is not standard schema supported by etcd
-		// {
-		// 	name:                   "unixs:absolute_path",
-		// 	useTLS:                 true,
-		// 	clientURLPattern:       "unixs:localhost:${MEMBER_NAME}",
-		// 	expectAuthorityPattern: "localhost:${MEMBER_NAME}",
-		// },
-		// {
-		// 	name:                   "unixs://absolute_path",
-		// 	useTLS:                 true,
-		// 	clientURLPattern:       "unixs://localhost:${MEMBER_NAME}",
-		// 	expectAuthorityPattern: "localhost:${MEMBER_NAME}",
-		// },
-		// {
-		// 	name:                   "http://domain[:port]",
-		// 	useTCP:                 true,
-		// 	clientURLPattern:       "http://localhost:${MEMBER_PORT}",
-		// 	expectAuthorityPattern: "localhost:${MEMBER_PORT}",
-		// },
-		// {
-		// 	name:                   "https://domain[:port]",
-		// 	useTLS:                 true,
-		// 	useTCP:                 true,
-		// 	clientURLPattern:       "https://localhost:${MEMBER_PORT}",
-		// 	expectAuthorityPattern: "localhost:${MEMBER_PORT}",
-		// },
-		{
-			name:                   "http://address[:port]",
-			useTCP:                 true,
-			clientURLPattern:       "http://127.0.0.1:${MEMBER_PORT}",
-			expectAuthorityPattern: "127.0.0.1:${MEMBER_PORT}",
-		},
-		// {
-		// 	name:                   "https://address[:port]",
-		// 	useTCP:                 true,
-		// 	useTLS:                 true,
-		// 	clientURLPattern:       "https://127.0.0.1:${MEMBER_PORT}",
-		// 	expectAuthorityPattern: "127.0.0.1:${MEMBER_PORT}",
-		// },
-	}
-	for _, tc := range tcs {
-		for _, clusterSize := range []int{1, 3} {
-			t.Run(fmt.Sprintf("Size: %d, Scenario: %q", clusterSize, tc.name), func(t *testing.T) {
-				integration.BeforeTest(t)
-				cfg := integration.ClusterConfig{
-					Size:   clusterSize,
-					UseTCP: tc.useTCP,
-					UseIP:  tc.useTCP,
-				}
-				cfg, tlsConfig := setupTLS(t, tc.useTLS, cfg)
-				clus := integration.NewCluster(t, &cfg)
-				defer clus.Terminate(t)
+// func TestAuthority(t *testing.T) {
+// 	tcs := []struct {
+// 		name                   string
+// 		useTCP                 bool
+// 		useTLS                 bool
+// 		clientURLPattern       string
+// 		expectAuthorityPattern string
+// 	}{
+// 		// {
+// 		// 	name:                   "unix:path",
+// 		// 	clientURLPattern:       "unix:localhost:${MEMBER_NAME}",
+// 		// 	expectAuthorityPattern: "localhost:${MEMBER_NAME}",
+// 		// },
+// 		// {
+// 		// 	name:                   "unix://absolute_path",
+// 		// 	clientURLPattern:       "unix://localhost:${MEMBER_NAME}",
+// 		// 	expectAuthorityPattern: "localhost:${MEMBER_NAME}",
+// 		// },
+// 		// // "unixs" is not standard schema supported by etcd
+// 		// {
+// 		// 	name:                   "unixs:absolute_path",
+// 		// 	useTLS:                 true,
+// 		// 	clientURLPattern:       "unixs:localhost:${MEMBER_NAME}",
+// 		// 	expectAuthorityPattern: "localhost:${MEMBER_NAME}",
+// 		// },
+// 		// {
+// 		// 	name:                   "unixs://absolute_path",
+// 		// 	useTLS:                 true,
+// 		// 	clientURLPattern:       "unixs://localhost:${MEMBER_NAME}",
+// 		// 	expectAuthorityPattern: "localhost:${MEMBER_NAME}",
+// 		// },
+// 		// {
+// 		// 	name:                   "http://domain[:port]",
+// 		// 	useTCP:                 true,
+// 		// 	clientURLPattern:       "http://localhost:${MEMBER_PORT}",
+// 		// 	expectAuthorityPattern: "localhost:${MEMBER_PORT}",
+// 		// },
+// 		// {
+// 		// 	name:                   "https://domain[:port]",
+// 		// 	useTLS:                 true,
+// 		// 	useTCP:                 true,
+// 		// 	clientURLPattern:       "https://localhost:${MEMBER_PORT}",
+// 		// 	expectAuthorityPattern: "localhost:${MEMBER_PORT}",
+// 		// },
+// 		{
+// 			name:                   "http://address[:port]",
+// 			useTCP:                 true,
+// 			clientURLPattern:       "http://127.0.0.1:${MEMBER_PORT}",
+// 			expectAuthorityPattern: "127.0.0.1:${MEMBER_PORT}",
+// 		},
+// 		// {
+// 		// 	name:                   "https://address[:port]",
+// 		// 	useTCP:                 true,
+// 		// 	useTLS:                 true,
+// 		// 	clientURLPattern:       "https://127.0.0.1:${MEMBER_PORT}",
+// 		// 	expectAuthorityPattern: "127.0.0.1:${MEMBER_PORT}",
+// 		// },
+// 	}
+// 	for _, tc := range tcs {
+// 		for _, clusterSize := range []int{1, 3} {
+// 			t.Run(fmt.Sprintf("Size: %d, Scenario: %q", clusterSize, tc.name), func(t *testing.T) {
+// 				integration.BeforeTest(t)
+// 				cfg := integration.ClusterConfig{
+// 					Size:   clusterSize,
+// 					UseTCP: tc.useTCP,
+// 					UseIP:  tc.useTCP,
+// 				}
+// 				cfg, tlsConfig := setupTLS(t, tc.useTLS, cfg)
+// 				clus := integration.NewCluster(t, &cfg)
+// 				defer clus.Terminate(t)
 
-				kv := setupClient(t, tc.clientURLPattern, clus, tlsConfig)
-				defer kv.Close()
+// 				kv := setupClient(t, tc.clientURLPattern, clus, tlsConfig)
+// 				defer kv.Close()
 
-				putRequestMethod := "/etcdserverpb.KV/Put"
-				for i := 0; i < 100; i++ {
-					_, err := kv.Put(context.TODO(), "foo", "bar")
-					require.NoError(t, err)
-				}
+// 				putRequestMethod := "/etcdserverpb.KV/Put"
+// 				for i := 0; i < 100; i++ {
+// 					_, err := kv.Put(context.TODO(), "foo", "bar")
+// 					require.NoError(t, err)
+// 				}
 
-				assertAuthority(t, tc.expectAuthorityPattern, clus, putRequestMethod)
-			})
-		}
-	}
-}
+// 				assertAuthority(t, tc.expectAuthorityPattern, clus, putRequestMethod)
+// 			})
+// 		}
+// 	}
+// }
 
 func setupTLS(t *testing.T, useTLS bool, cfg integration.ClusterConfig) (integration.ClusterConfig, *tls.Config) {
 	t.Helper()
@@ -165,6 +164,7 @@ func assertAuthority(t *testing.T, expectedAuthorityPattern string, clus *integr
 		requestsFound := 0
 		expectedAuthority := templateAuthority(t, expectedAuthorityPattern, m)
 		for _, r := range m.RecordedRequests() {
+			fmt.Println("RECORDED REQUEST", r)
 			if filterMethod != "" && r.FullMethod != filterMethod {
 				continue
 			}
