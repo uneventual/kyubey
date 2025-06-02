@@ -15,7 +15,6 @@ Implementation-specific bottlenecks:
 Remedies:
 - Improve: Remove defensive copies with CoW types, stream through serialized values from the database when possible, try and cull without deserializing using protowire.
 - Replace: Be able to treat list predicates as database queries, so your API server only gets what its clients ask for. Eliminate Cacher and Watch Cache entirely, and simply hit the database directly. Possibly do some watch coalescing, but otherwise keep as simple as possible.
-- 
 
 Notes:
 - FoundationDB Record Layer provides native support for using protocol buffers to define schemas for data types, and doing secondary indexes over them. Seems incredibly promising, especially since kubernetes doesn't do cross-key transactions. 
