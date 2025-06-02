@@ -1,4 +1,4 @@
-[[Dataflow.png]]
+![Dataflow diagram](./Dataflow.png)
 
 What's the point of the Cacher?
 - Etcd is a key-value store, so everything is addressed by its ID and you can't query it for for e.g. Pods by Node, so you have to maintain an in-memory cache with the indexes you want to query them by
